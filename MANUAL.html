@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kasagadi AI — System Manual</title>
+  <meta name="description" content="System manual for the Kasagadi AI fact-checking platform — actors, lifecycle, authentication, codebase, and more.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-900: #0c0d0e;
+      --primary-800: #1a1c1f;
+      --primary-700: #292c30;
+      --primary-500: #3a3e44;
+      --neutral-900: #0c0d0e;
+      --neutral-800: #1f2226;
+      --neutral-700: #44474d;
+      --neutral-500: #6a6e75;
+      --neutral-400: #9aa0a8;
+      --neutral-300: #c8ccd2;
+      --neutral-200: #e2e5e9;
+      --neutral-100: #eef0f3;
+      --neutral-50: #f6f7f9;
+      --paper: #fafbfc;
+      --accent-50: #fdf6e7;
+      --accent-100: #f9e9c0;
+      --accent-200: #f3d985;
+      --accent-400: #d8a93a;
+      --accent-500: #c39528;
+      --accent-600: #a07a1f;
+      --accent-700: #7d5f17;
+      --success-500: #1a7f4f;
+      --success-700: #0e5733;
+      --danger-500: #c83232;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: "Plus Jakarta Sans", -apple-system, system-ui, sans-serif;
+      color: var(--neutral-700);
+      background: var(--paper);
+      line-height: 1.7;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent-600); text-decoration: none; }
+    a:hover { color: var(--accent-500); text-decoration: underline; }
+
+    code, kbd, pre {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+    }
+    code {
+      font-size: 0.875em;
+      background: var(--neutral-100);
+      padding: 0.1em 0.4em;
+      border-radius: 0.25rem;
+      color: var(--neutral-900);
+    }
+    pre {
+      background: var(--primary-900);
+      color: #e8eaed;
+      padding: 1.25rem 1.5rem;
+      border-radius: 0.625rem;
+      overflow-x: auto;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      margin: 1.5rem 0;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: inherit;
+      font-size: inherit;
+    }
+
+    /* ===== Top bar ===== */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--neutral-200);
+    }
+    .topbar-inner {
+      max-width: 1200px; margin: 0 auto;
+      padding: 0.875rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 0.625rem;
+      font-weight: 700; color: var(--neutral-900);
+      font-size: 0.9375rem;
+    }
+    .brand:hover { text-decoration: none; color: var(--neutral-900); }
+    .brand-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--accent-500);
+    }
+    .brand-meta {
+      color: var(--neutral-400); font-weight: 500;
+      margin-left: 0.5rem; font-size: 0.8125rem;
+    }
+    .topbar-right {
+      display: flex; align-items: center; gap: 0.75rem;
+      font-size: 0.8125rem;
+    }
+    .topbar-right a {
+      color: var(--neutral-500); font-weight: 500;
+    }
+    .topbar-right a:hover { color: var(--neutral-900); text-decoration: none; }
+
+    /* ===== Layout ===== */
+    .layout {
+      max-width: 1200px; margin: 0 auto;
+      padding: 2.5rem 1.5rem 5rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 3rem;
+    }
+    @media (min-width: 980px) {
+      .layout {
+        grid-template-columns: 220px minmax(0, 1fr);
+        align-items: start;
+      }
+    }
+
+    /* ===== Sidebar TOC ===== */
+    .toc {
+      display: none;
+    }
+    @media (min-width: 980px) {
+      .toc {
+        display: block;
+        position: sticky; top: 4.5rem;
+        font-size: 0.8125rem;
+      }
+      .toc-label {
+        font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em;
+        text-transform: uppercase; color: var(--neutral-400);
+        margin-bottom: 0.875rem;
+      }
+      .toc ol {
+        list-style: none; padding: 0; margin: 0;
+        display: flex; flex-direction: column; gap: 0.125rem;
+      }
+      .toc a {
+        display: flex; gap: 0.5rem;
+        padding: 0.4rem 0.625rem;
+        border-radius: 0.375rem;
+        color: var(--neutral-500);
+        font-weight: 500;
+        line-height: 1.35;
+      }
+      .toc a:hover {
+        background: var(--neutral-100); color: var(--neutral-900);
+        text-decoration: none;
+      }
+      .toc-num {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.6875rem;
+        color: var(--neutral-400); font-weight: 600;
+        min-width: 1.25rem;
+      }
+    }
+
+    /* ===== Article ===== */
+    article { max-width: 760px; }
+
+    article > header {
+      padding-bottom: 2rem;
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--neutral-200);
+    }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent-600);
+      margin-bottom: 0.875rem;
+    }
+    .eyebrow::before {
+      content: ""; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent-500);
+    }
+    article > header h1 {
+      font-size: clamp(2rem, 4vw, 2.5rem);
+      font-weight: 800; letter-spacing: -0.02em; line-height: 1.15;
+      color: var(--neutral-900); margin: 0 0 1rem;
+    }
+    article > header p {
+      font-size: 1.0625rem; color: var(--neutral-700);
+      max-width: 60ch; margin: 0;
+    }
+
+    article h2 {
+      font-size: 1.5rem; font-weight: 700;
+      color: var(--neutral-900); letter-spacing: -0.01em;
+      margin: 3rem 0 1rem; scroll-margin-top: 4.5rem;
+      display: flex; align-items: baseline; gap: 0.625rem;
+    }
+    article h2 .h2-num {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8125rem; font-weight: 600;
+      color: var(--accent-600);
+      letter-spacing: 0;
+    }
+    article h3 {
+      font-size: 1.0625rem; font-weight: 700;
+      color: var(--neutral-900);
+      margin: 2rem 0 0.75rem; scroll-margin-top: 4.5rem;
+    }
+    article h4 {
+      font-size: 0.9375rem; font-weight: 700;
+      color: var(--neutral-900);
+      margin: 1.5rem 0 0.5rem;
+    }
+
+    article p { margin: 0 0 1.125rem; }
+    article ul, article ol { margin: 0 0 1.25rem; padding-left: 1.5rem; }
+    article li { margin-bottom: 0.5rem; }
+    article li::marker { color: var(--neutral-400); }
+    article strong { color: var(--neutral-900); font-weight: 700; }
+
+    /* ===== Table ===== */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1.5rem 0;
+      border: 1px solid var(--neutral-200);
+      border-radius: 0.75rem;
+    }
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      text-align: left; padding: 0.875rem 1rem;
+      border-bottom: 1px solid var(--neutral-100);
+      vertical-align: top;
+    }
+    th {
+      background: var(--neutral-50);
+      font-weight: 700; font-size: 0.6875rem;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--neutral-500);
+    }
+    tr:last-child td { border-bottom: 0; }
+
+    /* ===== Callouts ===== */
+    .note {
+      background: var(--accent-50);
+      border-left: 3px solid var(--accent-500);
+      padding: 1rem 1.25rem;
+      border-radius: 0 0.5rem 0.5rem 0;
+      margin: 1.5rem 0;
+      font-size: 0.9375rem;
+    }
+    .note strong { color: var(--accent-700); }
+
+    /* ===== Section divider ===== */
+    .divider {
+      border: 0; height: 1px; background: var(--neutral-200);
+      margin: 3rem 0 0;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      border-top: 1px solid var(--neutral-200);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      font-size: 0.8125rem; color: var(--neutral-400);
+    }
+    footer strong { color: var(--neutral-700); font-weight: 600; }
+
+    /* ===== State diagram ===== */
+    .diagram {
+      background: var(--neutral-50);
+      border: 1px solid var(--neutral-200);
+      border-radius: 0.625rem;
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+      margin: 1.5rem 0;
+    }
+    .diagram pre {
+      background: transparent; color: var(--neutral-700);
+      padding: 0; margin: 0; font-size: 0.75rem; line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html">
+        <span class="brand-dot"></span>
+        Kasagadi AI <span class="brand-meta">/ docs</span>
+      </a>
+      <div class="topbar-right">
+        <a href="index.html">← Overview</a>
+        <a href="MANUAL.md">View as markdown</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="layout">
+
+    <aside class="toc" aria-label="Table of contents">
+      <div class="toc-label">Contents</div>
+      <ol>
+        <li><a href="#1-what-the-platform-does"><span class="toc-num">01</span> What the platform does</a></li>
+        <li><a href="#2-the-actors"><span class="toc-num">02</span> The actors</a></li>
+        <li><a href="#3-the-lifecycle-of-a-claim"><span class="toc-num">03</span> Claim lifecycle</a></li>
+        <li><a href="#4-the-supporting-records"><span class="toc-num">04</span> Supporting records</a></li>
+        <li><a href="#5-walkthroughs-by-role"><span class="toc-num">05</span> Walkthroughs</a></li>
+        <li><a href="#6-authentication--authorization"><span class="toc-num">06</span> Auth</a></li>
+        <li><a href="#7-email--background-jobs"><span class="toc-num">07</span> Email &amp; jobs</a></li>
+        <li><a href="#8-storage"><span class="toc-num">08</span> Storage</a></li>
+        <li><a href="#9-frontend"><span class="toc-num">09</span> Frontend</a></li>
+        <li><a href="#10-codebase-tour"><span class="toc-num">10</span> Codebase tour</a></li>
+        <li><a href="#11-running-locally"><span class="toc-num">11</span> Running locally</a></li>
+        <li><a href="#12-testing"><span class="toc-num">12</span> Testing</a></li>
+        <li><a href="#13-glossary"><span class="toc-num">13</span> Glossary</a></li>
+      </ol>
+    </aside>
+
+    <article>
+
+      <header>
+        <div class="eyebrow">System manual</div>
+        <h1>Kasagadi AI — How the platform works</h1>
+        <p>A working reference for how the Kasagadi AI fact-checking platform is built and how it behaves. Useful to a new engineer, a product person reasoning about the lifecycle of a claim, or a designer wanting to know which states each screen represents.</p>
+      </header>
+
+      <section>
+        <h2 id="1-what-the-platform-does"><span class="h2-num">01</span> What the platform does</h2>
+        <p>Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit claims they want investigated. Admins triage those claims and assign them to accredited fact checkers. Fact checkers research the claim, write a verdict, and submit it back. Admins approve the verdict for publication, at which point the claim becomes visible on the public marketplace.</p>
+        <p>The platform is built so that the journey from "I saw a suspicious headline" to "here is a verified verdict with evidence and a research trail" lives in one auditable system.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="2-the-actors"><span class="h2-num">02</span> The actors</h2>
+        <p>There are three roles. A <code>User</code> record holds the credentials and shared profile (name, email, avatar). A user becomes one of three roles by being associated with a <code>Member</code>, <code>FactChecker</code>, or <code>Admin</code> profile record. The role helpers (<code>user.member?</code>, <code>user.fact_checker?</code>, <code>user.admin?</code>) drive routing and authorization.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Role</th><th>How they get one</th><th>What they can do</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Member</strong></td>
+                <td>Self-signs up at <code>/registration/new</code></td>
+                <td>Submit claims, save drafts, edit/destroy own drafts, browse the marketplace</td>
+              </tr>
+              <tr>
+                <td><strong>Fact checker</strong></td>
+                <td>Invited by an admin (<code>/admins/invitations</code>)</td>
+                <td>View their assignments, accept/reject them, submit verdicts</td>
+              </tr>
+              <tr>
+                <td><strong>Admin</strong></td>
+                <td>Provisioned manually (no public sign-up)</td>
+                <td>Triage claims, assign checkers, approve/archive, invite fact checkers</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Public visitors (no account) can browse the marketplace and read published claims.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="3-the-lifecycle-of-a-claim"><span class="h2-num">03</span> The lifecycle of a claim</h2>
+        <p>A claim moves through four states, governed by the AASM state machine on the <code>Claim</code> model. The transitions and who triggers them:</p>
+
+        <div class="diagram">
+<pre>                ┌───────────────────────────────────────────────────────┐
+                │                                                       │
+                ▼                                                       │
+   ┌────────┐   submit    ┌─────────────────────┐   assign_checker      │
+   │ draft  │ ──────────► │ pending_assignment  │ ────────────────┐     │
+   └────────┘  (member)   └─────────────────────┘                 │     │
+                                ▲                                 ▼     │
+                                │ reject_assignment   ┌─────────────────┐
+                                └──────────────────── │   in_progress   │
+                                  (fact checker)      └─────────────────┘
+                                                                  │
+                                                                  │ approve
+                                                                  ▼  (admin)
+                                                          ┌─────────────┐
+                                                          │  published  │
+                                                          └─────────────┘</pre>
+        </div>
+
+        <p>State-by-state:</p>
+        <ul>
+          <li><strong>draft</strong> — the member is composing the claim. Validations on title/content/source/topic/region are skipped while drafting (controlled by <code>Claim#skip_presence_validation?</code>). Drafts are private to the member; they can be edited and destroyed freely.</li>
+          <li><strong>pending_assignment</strong> — submitted to the platform, waiting for an admin to assign a fact checker. Visible in the admin queue.</li>
+          <li><strong>in_progress</strong> — a <code>FactChecker</code> has been assigned. The <code>Assignment</code> row tracks the due date, notes from admin, and its own status (<code>pending</code> → <code>in_progress</code> → <code>completed</code> / <code>rejected</code>).</li>
+          <li><strong>published</strong> — the verification is approved by an admin and the claim is live on the public marketplace (provided <code>is_archived</code> is <code>false</code>).</li>
+        </ul>
+
+        <div class="note">
+          <strong>Note:</strong> <code>is_archived</code> is an orthogonal boolean. An admin can archive any claim at any time to hide it from members and the public. Unarchive restores it.
+        </div>
+
+        <h3>Derived helpers</h3>
+        <p>The Claim model exposes a few "computed states" that combine the AASM state and the Assignment / Verification rows. These power the UI badges:</p>
+        <ul>
+          <li><code>awaiting_review?</code> — <code>in_progress</code> with a <code>pending</code> assignment (fact checker hasn't started yet)</li>
+          <li><code>under_review?</code> — <code>in_progress</code> with an <code>in_progress</code> assignment (actively being worked)</li>
+          <li><code>awaiting_approval?</code> — <code>in_progress</code> with a verification submitted (waiting for admin approval)</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="4-the-supporting-records"><span class="h2-num">04</span> The supporting records</h2>
+        <ul>
+          <li><strong>Evidence</strong> — many per claim. Each one has a description plus optional file attachments (images, videos, PDFs, etc., via Active Storage). Members add evidence when submitting a claim.</li>
+          <li><strong>Assignment</strong> — one per claim. Tracks who's assigned, who assigned them, the due date, notes, and status. An assignment fires <code>ClaimMailer.assigned</code> on creation and on a fact-checker swap (but not on same-checker re-saves).</li>
+          <li><strong>Verification</strong> — one per claim. The fact checker's verdict (<code>true</code>, <code>false</code>, <code>misleading</code>, <code>partly_true</code>, <code>unverifiable</code>), summary, research write-up, and reference link.</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="5-walkthroughs-by-role"><span class="h2-num">05</span> Walkthroughs by role</h2>
+
+        <h3>5.1 Member</h3>
+        <ol>
+          <li>Signs up at <code>/registration/new</code>. The controller creates a <code>User</code> and an associated <code>Member</code> row, signs them in, and lands them on <code>/members/dashboard</code>.</li>
+          <li>Goes to <code>/members/claims/new</code>. Fills in title, content, source, topic, region, and adds zero or more evidence rows (each with description and optional files).</li>
+          <li>Two submission paths from the same form:
+            <ul>
+              <li><strong>Submit</strong> — runs the <code>submit</code> AASM event and moves the claim to <code>pending_assignment</code>. Required fields are validated.</li>
+              <li><strong>Save draft</strong> — keeps it as <code>draft</code> with relaxed validation so partial work can be saved.</li>
+            </ul>
+          </li>
+          <li>Drafts can be edited (<code>/members/claims/:id/edit</code>) and destroyed. Submitted claims cannot.</li>
+          <li>When admin approves a verdict, the member receives <code>ClaimMailer.published</code> with a link to the marketplace page.</li>
+        </ol>
+
+        <h3>5.2 Fact checker</h3>
+        <ol>
+          <li>An admin invites them by email at <code>/admins/invitations/new</code>.</li>
+          <li>The invitee receives <code>InvitationMailer</code> with a link to <code>/invitations/:token/accept</code>. Tokens are 24-hour, single-use.</li>
+          <li>They complete a registration form on the acceptance page. This creates the <code>User</code> + <code>FactChecker</code> + (already-existing) <code>Invitation</code> flip to <code>accepted</code>, then signs them in.</li>
+          <li>They land on <code>/fact_checkers/dashboard</code> showing pending / in-progress / completed counts and verdict breakdown.</li>
+          <li>From <code>/fact_checkers/assignments</code> they can filter and search the queue. Opening an assignment shows the claim, evidence, and an inline verdict form.</li>
+          <li>Three actions on an assignment:
+            <ul>
+              <li><strong>Start review</strong> (<code>event=start_review</code>) — moves the assignment from <code>pending</code> to <code>in_progress</code>. The claim stays in <code>in_progress</code> (AASM-wise) — only the assignment row changes.</li>
+              <li><strong>Reject assignment</strong> (<code>event=reject_assignment</code>) — sends the claim back to <code>pending_assignment</code> (admin can reassign) and marks the assignment row <code>rejected</code>. Wrapped in a transaction so the two writes can't desync.</li>
+              <li><strong>Submit verdict</strong> (no event param, just the <code>verdict[…]</code> payload) — creates a <code>Verification</code> row and marks the assignment <code>completed</code>. Admin still has to approve before publication.</li>
+            </ul>
+          </li>
+        </ol>
+
+        <h3>5.3 Admin</h3>
+        <ol>
+          <li>Signs in at <code>/session/new</code> (no public admin sign-up — admins are seeded or created in console).</li>
+          <li>Lands on <code>/admins/dashboard</code>.</li>
+          <li>From <code>/admins/claims</code> they can filter by status, topic, region, search, and open any claim. The show page exposes:
+            <ul>
+              <li><strong>Assign</strong> — pick a fact checker, set a due date, add notes. Creates an <code>Assignment</code> (or updates an existing one for reassign). Triggers <code>ClaimMailer.assigned</code> on first assign and on fact-checker change.</li>
+              <li><strong>Approve</strong> (<code>event=approve</code>) — runs the <code>approve</code> AASM event, publishing the claim. Triggers <code>ClaimMailer.published</code> to the member.</li>
+              <li><strong>Archive / Unarchive</strong> (<code>event=archive</code> / <code>event=unarchive</code>) — toggles <code>is_archived</code>. Hides from public and member views.</li>
+            </ul>
+          </li>
+          <li>From <code>/admins/invitations</code> they can invite fact checkers, view pending invitations, resend expired ones (which generates a fresh token + 24h window).</li>
+        </ol>
+
+        <h3>5.4 Public visitor</h3>
+        <ul>
+          <li><code>/marketplace</code> — paginated, filterable list of <code>published</code> non-archived claims with verdicts, topics, regions, and search.</li>
+          <li><code>/marketplace/:id</code> — full claim detail: verdict, claim body, evidence, research, fact-checker attribution. Related claims by topic at the bottom.</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="6-authentication--authorization"><span class="h2-num">06</span> Authentication &amp; authorization</h2>
+        <ul>
+          <li><strong>Sessions</strong> — cookie-based, signed cookie holds a <code>Session.id</code>. Stored in the DB so sessions can be terminated server-side. Every request is gated by <code>Authentication#require_authentication</code> unless the controller opts out with <code>allow_unauthenticated_access</code>.</li>
+          <li><strong>Role gating</strong> — the three role-namespaced base controllers (<code>Members::BaseController</code>, <code>FactCheckers::BaseController</code>, <code>Admins::BaseController</code>) enforce the role check via <code>before_action</code>. Hitting an admin URL as a member redirects to root.</li>
+          <li><strong>Authorization</strong> — Pundit is wired in (<code>include Pundit::Authorization</code>). Currently only <code>ClaimPolicy</code> is in active use; most authorization happens via the role gates above and scope filtering inside controllers (e.g. fact-checker assignments are always scoped to <code>current_fact_checker.assignments</code>).</li>
+          <li><strong>Password reset</strong> — <code>User.generates_token_for(:password_reset)</code> creates a 15-minute signed token bound to the password salt, so changing the password invalidates any outstanding tokens. Reset flow lives in <code>PasswordsController</code>. Request always returns the same generic notice regardless of whether the email exists, to avoid leaking account existence.</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="7-email--background-jobs"><span class="h2-num">07</span> Email &amp; background jobs</h2>
+        <ul>
+          <li><strong>Mailers</strong>: <code>ClaimMailer</code> (assigned, published), <code>InvitationMailer</code>, <code>PasswordsMailer</code>.</li>
+          <li>All mailer dispatches use <code>deliver_later</code>, queued through Solid Queue (the database-backed Active Job adapter; runs in-process if <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
+          <li>Triggers:
+            <ul>
+              <li><code>ClaimMailer.assigned</code> — <code>Assignment</code> <code>after_create_commit</code> and on update if <code>fact_checker_id</code> changes</li>
+              <li><code>ClaimMailer.published</code> — Claim AASM <code>:approve</code> event <code>after_commit</code></li>
+              <li><code>InvitationMailer</code> — explicit dispatch in the admin invitations controller</li>
+              <li><code>PasswordsMailer.reset</code> — explicit dispatch in <code>PasswordsController#create</code></li>
+            </ul>
+          </li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="8-storage"><span class="h2-num">08</span> Storage</h2>
+        <p>Active Storage is configured for two services:</p>
+        <ul>
+          <li><strong>local</strong> — disk-based, used in development.</li>
+          <li><strong>cloudflare</strong> — Cloudflare R2 (S3-compatible) via the <code>aws-sdk-s3</code> gem. R2 quirks handled in <code>config/storage.yml</code>: <code>force_path_style: true</code>, <code>request_checksum_calculation: when_required</code>, <code>response_checksum_validation: when_required</code>.</li>
+        </ul>
+        <p>Cover images on claims are auto-promoted from the first attached image among the evidence files (see <code>Claim#promote_cover_image_from_evidence</code>), so members don't have to upload a separate hero image.</p>
+        <p>The shared partial <code>shared/_attachment.html.erb</code> renders any attachment with the right treatment: images and <code>mp4/webm/ogg</code> videos play inline (with a download button overlay); other types render as a clean file card. <code>shared/_attachment_grid.html.erb</code> splits visual vs. file attachments and lays them out together.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="9-frontend"><span class="h2-num">09</span> Frontend</h2>
+        <ul>
+          <li><strong>Tailwind CSS 4</strong> with a custom Ghana-inspired palette (charcoal primary, gold accent, green success, red danger). Defined in <code>app/assets/tailwind/application.css</code>.</li>
+          <li><strong>Stimulus</strong> for sprinkles of interactivity — accordions (<code>evidence_accordion_controller</code>), file upload previews (<code>file_picker_controller</code>, <code>image_skeleton_controller</code>), the verdict picker, the multi-step claim form (<code>members_claim_form_controller</code>), etc.</li>
+          <li><strong>Material Symbols</strong> outline font for icons; SVG inline for special cases (chevrons, paper clips).</li>
+          <li><strong>Plus Jakarta Sans</strong> as the display font (no serifs, intentional choice).</li>
+        </ul>
+        <p>Page-level layout conventions:</p>
+        <ul>
+          <li>Marketplace and inner pages: <code>max-w-7xl</code> for list pages, <code>max-w-6xl</code> for detail pages.</li>
+          <li>Section headers on portal/detail pages: left-aligned title, right-aligned meta; homepage sections are centered.</li>
+          <li>"Back" links: omitted on editorial pages (marketplace), included on portal detail pages.</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="10-codebase-tour"><span class="h2-num">10</span> Codebase tour</h2>
+        <p>Where things live:</p>
+<pre><code>app/
+├── controllers/
+│   ├── admins/                ← admin portal (claims, invitations, members,
+│   │                            fact_checkers, dashboard)
+│   ├── fact_checkers/         ← fact-checker portal (dashboard, assignments)
+│   ├── members/               ← member portal (dashboard, claims)
+│   ├── concerns/
+│   │   └── authentication.rb  ← session-based auth concern
+│   ├── marketplace_controller.rb
+│   ├── invitation_acceptances_controller.rb
+│   ├── registrations_controller.rb
+│   ├── sessions_controller.rb
+│   ├── passwords_controller.rb
+│   └── pages_controller.rb    ← landing page
+├── models/
+│   ├── user.rb / admin.rb / member.rb / fact_checker.rb
+│   ├── claim.rb               ← AASM state machine lives here
+│   ├── assignment.rb          ← assigned-mail callbacks
+│   ├── verification.rb
+│   ├── evidence.rb
+│   ├── invitation.rb
+│   ├── session.rb
+│   └── current.rb             ← thread-local current session
+├── policies/                  ← Pundit (light usage today)
+├── mailers/                   ← claim, invitation, password mailers
+├── views/
+│   ├── admins/ / fact_checkers/ / members/ / marketplace/
+│   ├── shared/                ← attachment partials, flash, etc.
+│   └── layouts/               ← application + auth layouts
+├── javascript/controllers/    ← Stimulus controllers
+└── assets/tailwind/           ← Tailwind + custom design tokens
+
+config/
+├── routes.rb
+├── storage.yml                ← local + Cloudflare R2 services
+└── credentials/               ← encrypted Rails credentials
+
+test/
+├── controllers/ models/ integration/ helpers/ mailers/
+└── fixtures/                  ← seeded user, member, admin, fact_checker,
+                                 claim, assignment, verification, invitation</code></pre>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="11-running-locally"><span class="h2-num">11</span> Running locally</h2>
+        <p>Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.</p>
+<pre><code>bin/setup            # bundle install, db:prepare
+bin/dev              # boots web + tailwind watch + (optionally) Solid Queue</code></pre>
+        <p>Sign in with the seeded admin account (see <code>db/seeds.rb</code>) or register as a fresh member at <code>/registration/new</code>.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="12-testing"><span class="h2-num">12</span> Testing</h2>
+<pre><code>bin/rails test                 # full suite (~190 tests, runs in &lt;5s)
+bin/rubocop                    # style
+bin/brakeman                   # security scan
+bin/importmap audit            # JS dep audit</code></pre>
+        <p>CI runs all four jobs on every push to <code>main</code> and on pull requests (<code>.github/workflows/ci.yml</code>).</p>
+        <p>Conventions:</p>
+        <ul>
+          <li>Controller tests live under <code>test/controllers/&lt;namespace&gt;/</code>. Sign-in helper is defined in <code>test/test_helper.rb</code> (<code>sign_in(user)</code>).</li>
+          <li>Fixtures are kept minimal but cover all roles and one of each lifecycle state (<code>pending_claim</code>, <code>under_review_claim</code>, <code>verified_claim</code>).</li>
+          <li>No system/browser tests yet — <code>test/system/</code> is empty.</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="13-glossary"><span class="h2-num">13</span> Glossary</h2>
+        <ul>
+          <li><strong>Claim</strong> — a public statement someone wants verified. The unit of work.</li>
+          <li><strong>Evidence</strong> — supporting material the member supplies with their claim (description + files).</li>
+          <li><strong>Assignment</strong> — the relationship between a claim and a fact checker, with due date and notes.</li>
+          <li><strong>Verification</strong> — the fact checker's verdict and research write-up.</li>
+          <li><strong>Verdict</strong> — one of <code>True</code>, <code>False</code>, <code>Misleading</code>, <code>Partly True</code>, <code>Unverifiable</code>.</li>
+          <li><strong>Marketplace</strong> — the public-facing catalogue of published, non-archived claims.</li>
+          <li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon next to their name.</li>
+        </ul>
+      </section>
+
+    </article>
+
+  </div>
+
+  <footer>
+    <p><strong>Kasagadi AI</strong> · System manual · Source in <code>docs/MANUAL.md</code></p>
+  </footer>
+
+</body>
+</html>
