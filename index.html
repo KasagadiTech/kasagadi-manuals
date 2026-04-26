@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kasagadi AI — Documentation</title>
+  <meta name="description" content="System manual for the Kasagadi AI fact-checking platform — actors, lifecycle, authentication, codebase, and more.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-900: #0c0d0e;
+      --primary-800: #1a1c1f;
+      --primary-700: #292c30;
+      --primary-500: #3a3e44;
+      --neutral-900: #0c0d0e;
+      --neutral-700: #44474d;
+      --neutral-500: #6a6e75;
+      --neutral-400: #9aa0a8;
+      --neutral-300: #c8ccd2;
+      --neutral-200: #e2e5e9;
+      --neutral-100: #eef0f3;
+      --neutral-50: #f6f7f9;
+      --paper: #fafbfc;
+      --accent-50: #fdf6e7;
+      --accent-100: #f9e9c0;
+      --accent-400: #d8a93a;
+      --accent-500: #c39528;
+      --accent-600: #a07a1f;
+      --success-500: #1a7f4f;
+      --success-700: #0e5733;
+      --danger-500: #c83232;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: "Plus Jakarta Sans", -apple-system, system-ui, sans-serif;
+      color: var(--neutral-700);
+      background: var(--paper);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code, kbd {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 0.875em;
+      background: var(--neutral-100);
+      padding: 0.1em 0.4em;
+      border-radius: 0.25rem;
+      color: var(--neutral-900);
+    }
+
+    a {
+      color: var(--accent-600);
+      text-decoration: none;
+    }
+    a:hover { color: var(--accent-500); text-decoration: underline; }
+
+    /* ===== Hero ===== */
+    .hero {
+      background: var(--primary-500);
+      color: white;
+      padding: 4rem 1.5rem 3rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute; inset: 0;
+      background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.06) 1px, transparent 0);
+      background-size: 14px 14px;
+      pointer-events: none;
+    }
+    .hero-inner {
+      max-width: 880px; margin: 0 auto; position: relative;
+    }
+    .hero .eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent-400);
+      margin-bottom: 1rem;
+    }
+    .hero .eyebrow::before {
+      content: ""; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent-400);
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800; letter-spacing: -0.02em; line-height: 1.1;
+      color: white; margin: 0 0 1rem;
+    }
+    .hero p {
+      font-size: 1.125rem; color: rgba(255,255,255,0.75);
+      max-width: 60ch; margin: 0 0 1.75rem;
+    }
+    .hero .ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.25rem; border-radius: 0.625rem;
+      font-weight: 600; font-size: 0.9rem;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--accent-500); color: var(--primary-900);
+    }
+    .btn-primary:hover {
+      background: var(--accent-400); color: var(--primary-900);
+      text-decoration: none;
+    }
+    .btn-ghost {
+      background: rgba(255,255,255,0.08); color: white;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .btn-ghost:hover {
+      background: rgba(255,255,255,0.14); color: white;
+      text-decoration: none;
+    }
+
+    /* ===== Body ===== */
+    main {
+      max-width: 880px; margin: 0 auto; padding: 3rem 1.5rem 5rem;
+    }
+
+    section { margin-bottom: 3rem; }
+
+    .label {
+      display: inline-block;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--neutral-500);
+      margin-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-size: 1.5rem; font-weight: 700; color: var(--neutral-900);
+      letter-spacing: -0.01em; margin: 0 0 1rem;
+    }
+
+    .lede {
+      font-size: 1.0625rem; color: var(--neutral-700);
+      max-width: 65ch;
+    }
+
+    /* ===== TOC grid ===== */
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+    .toc-card {
+      display: flex; gap: 0.875rem; align-items: flex-start;
+      padding: 1rem 1.125rem;
+      background: white;
+      border: 1px solid var(--neutral-200);
+      border-radius: 0.75rem;
+      color: var(--neutral-900);
+      transition: all 0.15s;
+    }
+    .toc-card:hover {
+      border-color: var(--accent-400);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px -4px rgba(0,0,0,0.08);
+      text-decoration: none; color: var(--neutral-900);
+    }
+    .toc-num {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.75rem; font-weight: 700;
+      color: var(--accent-600);
+      background: var(--accent-50);
+      width: 1.75rem; height: 1.75rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 0.375rem;
+      flex-shrink: 0; margin-top: 0.125rem;
+    }
+    .toc-text {
+      display: flex; flex-direction: column; gap: 0.125rem;
+    }
+    .toc-title {
+      font-weight: 600; font-size: 0.9375rem; color: var(--neutral-900);
+    }
+    .toc-blurb {
+      font-size: 0.8125rem; color: var(--neutral-500);
+      line-height: 1.4;
+    }
+
+    /* ===== Quick facts strip ===== */
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 0;
+      background: white;
+      border: 1px solid var(--neutral-200);
+      border-radius: 0.875rem;
+      overflow: hidden;
+      margin: 2rem 0;
+    }
+    .fact { padding: 1.25rem 1.25rem; border-right: 1px solid var(--neutral-100); }
+    .fact:last-child { border-right: 0; }
+    .fact-label {
+      font-size: 0.6875rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--neutral-400); margin-bottom: 0.375rem;
+    }
+    .fact-value {
+      font-size: 1rem; font-weight: 600; color: var(--neutral-900);
+      line-height: 1.3;
+    }
+    @media (max-width: 600px) {
+      .fact { border-right: 0; border-bottom: 1px solid var(--neutral-100); }
+      .fact:last-child { border-bottom: 0; }
+    }
+
+    /* ===== Roles ===== */
+    .role {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+      padding: 1.25rem;
+      background: white;
+      border: 1px solid var(--neutral-200);
+      border-radius: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .role-name {
+      font-weight: 700; color: var(--neutral-900); font-size: 0.9375rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .role-name::before {
+      content: ""; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent-500);
+    }
+    .role-desc { font-size: 0.875rem; color: var(--neutral-500); }
+
+    /* ===== Footer ===== */
+    footer {
+      border-top: 1px solid var(--neutral-200);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      font-size: 0.8125rem; color: var(--neutral-400);
+    }
+    footer strong { color: var(--neutral-700); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Kasagadi AI · System Manual</div>
+      <h1>How the platform works.</h1>
+      <p>A working reference for the Kasagadi AI fact-checking marketplace — actors, claim lifecycle, authentication, storage, codebase layout, and the conventions that hold it all together.</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="MANUAL.html">Read the full manual →</a>
+        <a class="btn btn-ghost" href="MANUAL.md">View as markdown</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <section>
+      <div class="lede">
+        Kasagadi AI is a Ghana-focused platform where members submit claims they want investigated, admins triage and assign accredited fact checkers, and verdicts are published to a public marketplace. This documentation explains how each role moves through that flow and where each piece lives in the codebase.
+      </div>
+
+      <div class="facts" aria-label="At a glance">
+        <div class="fact">
+          <div class="fact-label">Stack</div>
+          <div class="fact-value">Ruby 3.3 · Rails 8 · PostgreSQL</div>
+        </div>
+        <div class="fact">
+          <div class="fact-label">Frontend</div>
+          <div class="fact-value">Tailwind 4 · Stimulus · Importmap</div>
+        </div>
+        <div class="fact">
+          <div class="fact-label">Storage</div>
+          <div class="fact-value">Active Storage on Cloudflare R2</div>
+        </div>
+        <div class="fact">
+          <div class="fact-label">Tests</div>
+          <div class="fact-value">~190 passing in &lt;5s</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">The roles</div>
+      <h2>Three actors keep the platform moving</h2>
+      <div style="margin-top:1.25rem;">
+        <div class="role">
+          <div class="role-name">Member</div>
+          <div class="role-desc">Self-signs up, drafts claims, attaches evidence, submits for review.</div>
+        </div>
+        <div class="role">
+          <div class="role-name">Fact checker</div>
+          <div class="role-desc">Invited by an admin, picks up assignments, researches, submits a verdict.</div>
+        </div>
+        <div class="role">
+          <div class="role-name">Admin</div>
+          <div class="role-desc">Triages incoming claims, assigns checkers, approves verdicts, manages invitations.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Contents</div>
+      <h2>Jump to a section</h2>
+      <div class="toc-grid">
+        <a class="toc-card" href="MANUAL.html#1-what-the-platform-does">
+          <span class="toc-num">01</span>
+          <span class="toc-text">
+            <span class="toc-title">What the platform does</span>
+            <span class="toc-blurb">The mission and the journey from headline to verdict</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#2-the-actors">
+          <span class="toc-num">02</span>
+          <span class="toc-text">
+            <span class="toc-title">The actors</span>
+            <span class="toc-blurb">How users become members, fact checkers, or admins</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#3-the-lifecycle-of-a-claim">
+          <span class="toc-num">03</span>
+          <span class="toc-text">
+            <span class="toc-title">Claim lifecycle</span>
+            <span class="toc-blurb">AASM state machine: draft → pending → in progress → published</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#4-the-supporting-records">
+          <span class="toc-num">04</span>
+          <span class="toc-text">
+            <span class="toc-title">Supporting records</span>
+            <span class="toc-blurb">Evidence, Assignment, Verification</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#5-walkthroughs-by-role">
+          <span class="toc-num">05</span>
+          <span class="toc-text">
+            <span class="toc-title">Walkthroughs by role</span>
+            <span class="toc-blurb">Step-by-step flows for each actor and the public visitor</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#6-authentication--authorization">
+          <span class="toc-num">06</span>
+          <span class="toc-text">
+            <span class="toc-title">Authentication &amp; authorization</span>
+            <span class="toc-blurb">Sessions, role gates, Pundit, password reset</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#7-email--background-jobs">
+          <span class="toc-num">07</span>
+          <span class="toc-text">
+            <span class="toc-title">Email &amp; background jobs</span>
+            <span class="toc-blurb">Mailers and Solid Queue triggers</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#8-storage">
+          <span class="toc-num">08</span>
+          <span class="toc-text">
+            <span class="toc-title">Storage</span>
+            <span class="toc-blurb">Active Storage local + Cloudflare R2, attachment partials</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#9-frontend">
+          <span class="toc-num">09</span>
+          <span class="toc-text">
+            <span class="toc-title">Frontend</span>
+            <span class="toc-blurb">Tailwind, Stimulus controllers, layout conventions</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#10-codebase-tour">
+          <span class="toc-num">10</span>
+          <span class="toc-text">
+            <span class="toc-title">Codebase tour</span>
+            <span class="toc-blurb">Where every directory and file lives</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#11-running-locally">
+          <span class="toc-num">11</span>
+          <span class="toc-text">
+            <span class="toc-title">Running locally</span>
+            <span class="toc-blurb">Setup commands, dev environment</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#12-testing">
+          <span class="toc-num">12</span>
+          <span class="toc-text">
+            <span class="toc-title">Testing</span>
+            <span class="toc-blurb">Test suite, CI jobs, conventions</span>
+          </span>
+        </a>
+        <a class="toc-card" href="MANUAL.html#13-glossary">
+          <span class="toc-num">13</span>
+          <span class="toc-text">
+            <span class="toc-title">Glossary</span>
+            <span class="toc-blurb">Domain terms used throughout the docs</span>
+          </span>
+        </a>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p><strong>Kasagadi AI</strong> · Last updated from <code>docs/MANUAL.md</code></p>
+  </footer>
+
+</body>
+</html>
