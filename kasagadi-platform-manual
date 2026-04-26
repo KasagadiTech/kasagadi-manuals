@@ -1,0 +1,353 @@
+# Kasagadi AI — System Manual
+
+A working reference for how the Kasagadi AI fact-checking platform is built and how it
+behaves. Useful to a new engineer joining the team, a product person needing to reason
+about the lifecycle of a claim, or a designer wanting to know which states each screen
+represents.
+
+---
+
+## 1. What the platform does
+
+Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit
+claims they want investigated. Admins triage those claims and assign them to accredited
+fact checkers. Fact checkers research the claim, write a verdict, and submit it back.
+Admins approve the verdict for publication, at which point the claim becomes visible on
+the public marketplace.
+
+The platform is built so that the journey from "I saw a suspicious headline" to "here is
+a verified verdict with evidence and a research trail" lives in one auditable system.
+
+---
+
+## 2. The actors
+
+There are three roles. A `User` record holds the credentials and shared profile
+(name, email, avatar). A user becomes one of three roles by being associated with a
+`Member`, `FactChecker`, or `Admin` profile record. The role helpers
+(`user.member?`, `user.fact_checker?`, `user.admin?`) drive routing and authorization.
+
+| Role          | How they get one                              | What they can do                                                                 |
+|---------------|------------------------------------------------|----------------------------------------------------------------------------------|
+| Member        | Self-signs up at `/registration/new`           | Submit claims, save drafts, edit/destroy own drafts, browse the marketplace      |
+| Fact checker  | Invited by an admin (`/admins/invitations`)    | View their assignments, accept/reject them, submit verdicts                      |
+| Admin         | Provisioned manually (no public sign-up)       | Triage claims, assign checkers, approve/archive, invite fact checkers            |
+
+Public visitors (no account) can browse the marketplace and read published claims.
+
+---
+
+## 3. The lifecycle of a claim
+
+A claim moves through four states, governed by the AASM state machine on the `Claim`
+model. The transitions and who triggers them:
+
+```
+                ┌───────────────────────────────────────────────────────┐
+                │                                                       │
+                ▼                                                       │
+   ┌────────┐   submit    ┌─────────────────────┐   assign_checker      │
+   │ draft  │ ──────────► │ pending_assignment  │ ────────────────┐     │
+   └────────┘  (member)   └─────────────────────┘                 │     │
+                                ▲                                 ▼     │
+                                │ reject_assignment   ┌─────────────────┐
+                                └──────────────────── │   in_progress   │
+                                  (fact checker)      └─────────────────┘
+                                                                  │
+                                                                  │ approve
+                                                                  ▼  (admin)
+                                                          ┌─────────────┐
+                                                          │  published  │
+                                                          └─────────────┘
+```
+
+State-by-state:
+
+- **draft** — the member is composing the claim. Validations on title/content/source/
+  topic/region are skipped while drafting (controlled by `Claim#skip_presence_validation?`).
+  Drafts are private to the member; they can be edited and destroyed freely.
+- **pending_assignment** — submitted to the platform, waiting for an admin to assign a
+  fact checker. Visible in the admin queue.
+- **in_progress** — a `FactChecker` has been assigned. The `Assignment` row tracks the
+  due date, notes from admin, and its own status (`pending` → `in_progress` → `completed`
+  / `rejected`).
+- **published** — the verification is approved by an admin and the claim is live on the
+  public marketplace (provided `is_archived` is `false`).
+
+`is_archived` is an orthogonal boolean: an admin can archive any claim at any time to
+hide it from members and the public. Unarchive restores it.
+
+The state machine itself lives in [app/models/claim.rb](../app/models/claim.rb).
+
+### Derived helpers
+
+The Claim model exposes a few "computed states" that combine the AASM state and the
+Assignment / Verification rows. These power the UI badges:
+
+- `awaiting_review?` — `in_progress` with a `pending` assignment (fact checker hasn't
+  started yet)
+- `under_review?` — `in_progress` with an `in_progress` assignment (actively being
+  worked)
+- `awaiting_approval?` — `in_progress` with a verification submitted (waiting for admin
+  approval)
+
+---
+
+## 4. The supporting records
+
+- **Evidence** — many per claim. Each one has a description plus optional file
+  attachments (images, videos, PDFs, etc., via Active Storage). Members add evidence
+  when submitting a claim.
+- **Assignment** — one per claim. Tracks who's assigned, who assigned them, the due
+  date, notes, and status. An assignment fires `ClaimMailer.assigned` on creation and
+  on a fact-checker swap (but not on same-checker re-saves).
+- **Verification** — one per claim. The fact checker's verdict (`true`, `false`,
+  `misleading`, `partly_true`, `unverifiable`), summary, research write-up, and
+  reference link.
+
+---
+
+## 5. Walkthroughs by role
+
+### 5.1 Member
+
+1. Signs up at `/registration/new`. The controller creates a `User` and an associated
+   `Member` row, signs them in, and lands them on `/members/dashboard`.
+2. Goes to `/members/claims/new`. Fills in title, content, source, topic, region, and
+   adds zero or more evidence rows (each with description and optional files).
+3. Two submission paths from the same form:
+   - **Submit** — runs the `submit` AASM event and moves the claim to
+     `pending_assignment`. Required fields are validated.
+   - **Save draft** — keeps it as `draft` with relaxed validation so partial work
+     can be saved.
+4. Drafts can be edited (`/members/claims/:id/edit`) and destroyed. Submitted claims
+   cannot.
+5. When admin approves a verdict, the member receives `ClaimMailer.published` with a
+   link to the marketplace page.
+
+### 5.2 Fact checker
+
+1. An admin invites them by email at `/admins/invitations/new`.
+2. The invitee receives `InvitationMailer` with a link to
+   `/invitations/:token/accept`. Tokens are 24-hour, single-use.
+3. They complete a registration form on the acceptance page. This creates the `User` +
+   `FactChecker` + (already-existing) `Invitation` flip to `accepted`, then signs them in.
+4. They land on `/fact_checkers/dashboard` showing pending / in-progress / completed
+   counts and verdict breakdown.
+5. From `/fact_checkers/assignments` they can filter and search the queue. Opening an
+   assignment shows the claim, evidence, and an inline verdict form.
+6. Three actions on an assignment:
+   - **Start review** (`event=start_review`) — moves the assignment from `pending` to
+     `in_progress`. The claim stays in `in_progress` (AASM-wise) — only the assignment
+     row changes.
+   - **Reject assignment** (`event=reject_assignment`) — sends the claim back to
+     `pending_assignment` (admin can reassign) and marks the assignment row `rejected`.
+     Wrapped in a transaction so the two writes can't desync.
+   - **Submit verdict** (no event param, just the `verdict[…]` payload) — creates a
+     `Verification` row and marks the assignment `completed`. Admin still has to
+     approve before publication.
+
+### 5.3 Admin
+
+1. Signs in at `/session/new` (no public admin sign-up — admins are seeded or created
+   in console).
+2. Lands on `/admins/dashboard`.
+3. From `/admins/claims` they can filter by status, topic, region, search, and open any
+   claim. The show page exposes:
+   - **Assign** — pick a fact checker, set a due date, add notes. Creates an
+     `Assignment` (or updates an existing one for reassign). Triggers
+     `ClaimMailer.assigned` on first assign and on fact-checker change.
+   - **Approve** (`event=approve`) — runs the `approve` AASM event, publishing the
+     claim. Triggers `ClaimMailer.published` to the member.
+   - **Archive / Unarchive** (`event=archive` / `event=unarchive`) — toggles
+     `is_archived`. Hides from public and member views.
+4. From `/admins/invitations` they can invite fact checkers, view pending invitations,
+   resend expired ones (which generates a fresh token + 24h window).
+
+### 5.4 Public visitor
+
+- `/marketplace` — paginated, filterable list of `published` non-archived claims with
+  verdicts, topics, regions, and search.
+- `/marketplace/:id` — full claim detail: verdict, claim body, evidence, research,
+  fact-checker attribution. Related claims by topic at the bottom.
+
+---
+
+## 6. Authentication & authorization
+
+- **Sessions** — cookie-based, signed cookie holds a `Session.id`. Stored in the DB so
+  sessions can be terminated server-side. Every request is gated by
+  `Authentication#require_authentication` unless the controller opts out with
+  `allow_unauthenticated_access`.
+- **Role gating** — the three role-namespaced base controllers
+  (`Members::BaseController`, `FactCheckers::BaseController`, `Admins::BaseController`)
+  enforce the role check via `before_action`. Hitting an admin URL as a member redirects
+  to root.
+- **Authorization** — Pundit is wired in (`include Pundit::Authorization`). Currently
+  only `ClaimPolicy` is in active use; most authorization happens via the role gates
+  above and scope filtering inside controllers (e.g. fact-checker assignments are
+  always scoped to `current_fact_checker.assignments`).
+- **Password reset** — `User.generates_token_for(:password_reset)` creates a 15-minute
+  signed token bound to the password salt, so changing the password invalidates any
+  outstanding tokens. Reset flow lives in `PasswordsController`. Request always returns
+  the same generic notice regardless of whether the email exists, to avoid leaking
+  account existence.
+
+---
+
+## 7. Email & background jobs
+
+- **Mailers**: `ClaimMailer` (assigned, published), `InvitationMailer`, `PasswordsMailer`.
+- All mailer dispatches use `deliver_later`, queued through Solid Queue (the
+  database-backed Active Job adapter; runs in-process if `SOLID_QUEUE_IN_PUMA=1`).
+- Triggers:
+  - `ClaimMailer.assigned` — `Assignment` `after_create_commit` and on update if
+    `fact_checker_id` changes
+  - `ClaimMailer.published` — Claim AASM `:approve` event `after_commit`
+  - `InvitationMailer` — explicit dispatch in the admin invitations controller
+  - `PasswordsMailer.reset` — explicit dispatch in `PasswordsController#create`
+
+---
+
+## 8. Storage
+
+Active Storage is configured for two services:
+
+- **local** — disk-based, used in development.
+- **cloudflare** — Cloudflare R2 (S3-compatible) via the `aws-sdk-s3` gem. R2 quirks
+  handled in `config/storage.yml`: `force_path_style: true`,
+  `request_checksum_calculation: when_required`, `response_checksum_validation: when_required`.
+
+Cover images on claims are auto-promoted from the first attached image among the
+evidence files (see `Claim#promote_cover_image_from_evidence`), so members don't have
+to upload a separate hero image.
+
+The shared partial [`shared/_attachment.html.erb`](../app/views/shared/_attachment.html.erb)
+renders any attachment with the right treatment: images and `mp4/webm/ogg` videos play
+inline (with a download button overlay); other types render as a clean file card.
+[`shared/_attachment_grid.html.erb`](../app/views/shared/_attachment_grid.html.erb) splits
+visual vs. file attachments and lays them out together.
+
+---
+
+## 9. Frontend
+
+- **Tailwind CSS 4** with a custom Ghana-inspired palette (charcoal primary, gold
+  accent, green success, red danger). Defined in
+  [`app/assets/tailwind/application.css`](../app/assets/tailwind/application.css).
+- **Stimulus** for sprinkles of interactivity — accordions
+  (`evidence_accordion_controller`), file upload previews (`file_picker_controller`,
+  `image_skeleton_controller`), the verdict picker, the multi-step claim form
+  (`members_claim_form_controller`), etc.
+- **Material Symbols** outline font for icons; SVG inline for special cases (chevrons,
+  paper clips).
+- **Plus Jakarta Sans** as the display font (no serifs, intentional choice).
+
+Page-level layout conventions:
+
+- Marketplace and inner pages: max-w-7xl for list pages, max-w-6xl for detail pages.
+- Section headers on portal/detail pages: left-aligned title, right-aligned meta;
+  homepage sections are centered.
+- "Back" links: omitted on editorial pages (marketplace), included on portal detail
+  pages.
+
+---
+
+## 10. Codebase tour
+
+Where things live:
+
+```
+app/
+├── controllers/
+│   ├── admins/                ← admin portal (claims, invitations, members,
+│   │                            fact_checkers, dashboard)
+│   ├── fact_checkers/         ← fact-checker portal (dashboard, assignments)
+│   ├── members/               ← member portal (dashboard, claims)
+│   ├── concerns/
+│   │   └── authentication.rb  ← session-based auth concern
+│   ├── marketplace_controller.rb
+│   ├── invitation_acceptances_controller.rb
+│   ├── registrations_controller.rb
+│   ├── sessions_controller.rb
+│   ├── passwords_controller.rb
+│   └── pages_controller.rb    ← landing page
+├── models/
+│   ├── user.rb / admin.rb / member.rb / fact_checker.rb
+│   ├── claim.rb               ← AASM state machine lives here
+│   ├── assignment.rb          ← assigned-mail callbacks
+│   ├── verification.rb
+│   ├── evidence.rb
+│   ├── invitation.rb
+│   ├── session.rb
+│   └── current.rb             ← thread-local current session
+├── policies/                  ← Pundit (light usage today)
+├── mailers/                   ← claim, invitation, password mailers
+├── views/
+│   ├── admins/ / fact_checkers/ / members/ / marketplace/
+│   ├── shared/                ← attachment partials, flash, etc.
+│   └── layouts/               ← application + auth layouts
+├── javascript/controllers/    ← Stimulus controllers
+└── assets/tailwind/           ← Tailwind + custom design tokens
+
+config/
+├── routes.rb
+├── storage.yml                ← local + Cloudflare R2 services
+└── credentials/               ← encrypted Rails credentials
+
+test/
+├── controllers/ models/ integration/ helpers/ mailers/
+└── fixtures/                  ← seeded user, member, admin, fact_checker,
+                                 claim, assignment, verification, invitation
+```
+
+---
+
+## 11. Running locally
+
+Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.
+
+```bash
+bin/setup            # bundle install, db:prepare
+bin/dev              # boots web + tailwind watch + (optionally) Solid Queue
+```
+
+Sign in with the seeded admin account (see `db/seeds.rb`) or register as a fresh
+member at `/registration/new`.
+
+---
+
+## 12. Testing
+
+```bash
+bin/rails test                 # full suite (~190 tests, runs in <5s)
+bin/rubocop                    # style
+bin/brakeman                   # security scan
+bin/importmap audit            # JS dep audit
+```
+
+CI runs all four jobs on every push to `main` and on pull requests
+([.github/workflows/ci.yml](../.github/workflows/ci.yml)).
+
+Conventions:
+
+- Controller tests live under `test/controllers/<namespace>/`. Sign-in helper is
+  defined in `test/test_helper.rb` (`sign_in(user)`).
+- Fixtures are kept minimal but cover all roles and one of each lifecycle state
+  (`pending_claim`, `under_review_claim`, `verified_claim`).
+- No system/browser tests yet — `test/system/` is empty.
+
+---
+
+## 13. Glossary
+
+- **Claim** — a public statement someone wants verified. The unit of work.
+- **Evidence** — supporting material the member supplies with their claim
+  (description + files).
+- **Assignment** — the relationship between a claim and a fact checker, with due date
+  and notes.
+- **Verification** — the fact checker's verdict and research write-up.
+- **Verdict** — one of `True`, `False`, `Misleading`, `Partly True`, `Unverifiable`.
+- **Marketplace** — the public-facing catalogue of published, non-archived claims.
+- **Accredited** — fact checkers with `verified: true`, marked with a check icon next
+  to their name.
