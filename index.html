@@ -282,14 +282,14 @@
         </div>
         <div class="fact">
           <div class="fact-label">Tests</div>
-          <div class="fact-value">~190 passing in &lt;5s</div>
+          <div class="fact-value">~470 passing · CI green</div>
         </div>
       </div>
     </section>
 
     <section>
       <div class="label">The roles</div>
-      <h2>Three actors keep the platform moving</h2>
+      <h2>Four actors keep the platform moving</h2>
       <div style="margin-top:1.25rem;">
         <div class="role">
           <div class="role-name">Member</div>
@@ -301,7 +301,11 @@
         </div>
         <div class="role">
           <div class="role-name">Admin</div>
-          <div class="role-desc">Triages incoming claims, assigns checkers, approves verdicts, manages invitations.</div>
+          <div class="role-desc">Owns the claims they assign, approves/unpublishes their own verdicts, transfers ownership, invites fact checkers.</div>
+        </div>
+        <div class="role">
+          <div class="role-name">Super Admin</div>
+          <div class="role-desc">The single platform owner — manages admins, suspends accounts, sees every claim, reads the audit log and analytics.</div>
         </div>
       </div>
     </section>
@@ -310,97 +314,132 @@
       <div class="label">Contents</div>
       <h2>Jump to a section</h2>
       <div class="toc-grid">
-        <a class="toc-card" href="MANUAL.html#1-what-the-platform-does">
-          <span class="toc-num">01</span>
-          <span class="toc-text">
-            <span class="toc-title">What the platform does</span>
-            <span class="toc-blurb">The mission and the journey from headline to verdict</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#2-the-actors">
-          <span class="toc-num">02</span>
-          <span class="toc-text">
-            <span class="toc-title">The actors</span>
-            <span class="toc-blurb">How users become members, fact checkers, or admins</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#3-the-lifecycle-of-a-claim">
-          <span class="toc-num">03</span>
-          <span class="toc-text">
-            <span class="toc-title">Claim lifecycle</span>
-            <span class="toc-blurb">AASM state machine: draft → pending → in progress → published</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#4-the-supporting-records">
-          <span class="toc-num">04</span>
-          <span class="toc-text">
-            <span class="toc-title">Supporting records</span>
-            <span class="toc-blurb">Evidence, Assignment, Verification</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#5-walkthroughs-by-role">
-          <span class="toc-num">05</span>
-          <span class="toc-text">
-            <span class="toc-title">Walkthroughs by role</span>
-            <span class="toc-blurb">Step-by-step flows for each actor and the public visitor</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#6-authentication--authorization">
-          <span class="toc-num">06</span>
-          <span class="toc-text">
-            <span class="toc-title">Authentication &amp; authorization</span>
-            <span class="toc-blurb">Sessions, role gates, Pundit, password reset</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#7-email--background-jobs">
-          <span class="toc-num">07</span>
-          <span class="toc-text">
-            <span class="toc-title">Email &amp; background jobs</span>
-            <span class="toc-blurb">Mailers and Solid Queue triggers</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#8-storage">
-          <span class="toc-num">08</span>
-          <span class="toc-text">
-            <span class="toc-title">Storage</span>
-            <span class="toc-blurb">Active Storage local + Cloudflare R2, attachment partials</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#9-frontend">
-          <span class="toc-num">09</span>
-          <span class="toc-text">
-            <span class="toc-title">Frontend</span>
-            <span class="toc-blurb">Tailwind, Stimulus controllers, layout conventions</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#10-codebase-tour">
-          <span class="toc-num">10</span>
-          <span class="toc-text">
-            <span class="toc-title">Codebase tour</span>
-            <span class="toc-blurb">Where every directory and file lives</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#11-running-locally">
-          <span class="toc-num">11</span>
-          <span class="toc-text">
-            <span class="toc-title">Running locally</span>
-            <span class="toc-blurb">Setup commands, dev environment</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#12-testing">
-          <span class="toc-num">12</span>
-          <span class="toc-text">
-            <span class="toc-title">Testing</span>
-            <span class="toc-blurb">Test suite, CI jobs, conventions</span>
-          </span>
-        </a>
-        <a class="toc-card" href="MANUAL.html#13-glossary">
-          <span class="toc-num">13</span>
-          <span class="toc-text">
-            <span class="toc-title">Glossary</span>
-            <span class="toc-blurb">Domain terms used throughout the docs</span>
-          </span>
-        </a>
+<a class="toc-card" href="MANUAL.html#1-what-the-platform-does">
+  <span class="toc-num">01</span>
+  <span class="toc-text">
+    <span class="toc-title">What the platform does</span>
+    <span class="toc-blurb">The mission and the journey from headline to verdict</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#2-the-actors">
+  <span class="toc-num">02</span>
+  <span class="toc-text">
+    <span class="toc-title">The actors</span>
+    <span class="toc-blurb">Members, fact checkers, admins, and the single super admin</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#3-the-lifecycle-of-a-claim">
+  <span class="toc-num">03</span>
+  <span class="toc-text">
+    <span class="toc-title">Claim lifecycle</span>
+    <span class="toc-blurb">Five states: draft → pending → in progress → published → unpublished</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#4-claim-ownership-accountability">
+  <span class="toc-num">04</span>
+  <span class="toc-text">
+    <span class="toc-title">Ownership &amp; accountability</span>
+    <span class="toc-blurb">Owner admins, owner-only publishing, transfer</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#5-the-supporting-records">
+  <span class="toc-num">05</span>
+  <span class="toc-text">
+    <span class="toc-title">Supporting records</span>
+    <span class="toc-blurb">Evidence, Assignment, Verification, Audit log</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#6-walkthroughs-by-role">
+  <span class="toc-num">06</span>
+  <span class="toc-text">
+    <span class="toc-title">Walkthroughs by role</span>
+    <span class="toc-blurb">Step-by-step flows for every role and the public</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#7-account-suspension">
+  <span class="toc-num">07</span>
+  <span class="toc-text">
+    <span class="toc-title">Account suspension</span>
+    <span class="toc-blurb">How suspension blocks access in depth</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#8-the-audit-log">
+  <span class="toc-num">08</span>
+  <span class="toc-text">
+    <span class="toc-title">The audit log</span>
+    <span class="toc-blurb">The immutable record of who did what</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#9-authentication-authorization">
+  <span class="toc-num">09</span>
+  <span class="toc-text">
+    <span class="toc-title">Auth &amp; authorization</span>
+    <span class="toc-blurb">Sessions, role gates, ownership gating</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#10-dashboards-analytics">
+  <span class="toc-num">10</span>
+  <span class="toc-text">
+    <span class="toc-title">Dashboards &amp; analytics</span>
+    <span class="toc-blurb">What each chart actually counts</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#11-operating-the-platform">
+  <span class="toc-num">11</span>
+  <span class="toc-text">
+    <span class="toc-title">Operating the platform</span>
+    <span class="toc-blurb">Promote a super admin, suspend, transfer (ops)</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#12-email-background-jobs">
+  <span class="toc-num">12</span>
+  <span class="toc-text">
+    <span class="toc-title">Email &amp; jobs</span>
+    <span class="toc-blurb">Mailers and Solid Queue triggers</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#13-storage">
+  <span class="toc-num">13</span>
+  <span class="toc-text">
+    <span class="toc-title">Storage</span>
+    <span class="toc-blurb">Active Storage: local + Cloudflare R2</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#14-frontend">
+  <span class="toc-num">14</span>
+  <span class="toc-text">
+    <span class="toc-title">Frontend</span>
+    <span class="toc-blurb">Tailwind, Stimulus, layout conventions</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#15-codebase-tour">
+  <span class="toc-num">15</span>
+  <span class="toc-text">
+    <span class="toc-title">Codebase tour</span>
+    <span class="toc-blurb">Where everything lives</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#16-running-locally">
+  <span class="toc-num">16</span>
+  <span class="toc-text">
+    <span class="toc-title">Running locally</span>
+    <span class="toc-blurb">Boot the stack in development</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#17-testing">
+  <span class="toc-num">17</span>
+  <span class="toc-text">
+    <span class="toc-title">Testing</span>
+    <span class="toc-blurb">Suite, rubocop, brakeman, importmap</span>
+  </span>
+</a>
+<a class="toc-card" href="MANUAL.html#18-glossary">
+  <span class="toc-num">18</span>
+  <span class="toc-text">
+    <span class="toc-title">Glossary</span>
+    <span class="toc-blurb">Domain terms used throughout the docs</span>
+  </span>
+</a>
       </div>
     </section>
 

@@ -290,6 +290,10 @@
       background: transparent; color: var(--neutral-700);
       padding: 0; margin: 0; font-size: 0.75rem; line-height: 1.4;
     }
+  
+    blockquote { margin: 1.4rem 0; padding: 0.85rem 1.1rem; background: var(--accent-50); border-left: 3px solid var(--accent-500); border-radius: 0 8px 8px 0; color: var(--neutral-800); }
+    blockquote p { margin: 0.35rem 0; }
+    blockquote strong { color: var(--neutral-900); }
   </style>
 </head>
 <body>
@@ -314,337 +318,756 @@
       <ol>
         <li><a href="#1-what-the-platform-does"><span class="toc-num">01</span> What the platform does</a></li>
         <li><a href="#2-the-actors"><span class="toc-num">02</span> The actors</a></li>
-        <li><a href="#3-the-lifecycle-of-a-claim"><span class="toc-num">03</span> Claim lifecycle</a></li>
-        <li><a href="#4-the-supporting-records"><span class="toc-num">04</span> Supporting records</a></li>
-        <li><a href="#5-walkthroughs-by-role"><span class="toc-num">05</span> Walkthroughs</a></li>
-        <li><a href="#6-authentication--authorization"><span class="toc-num">06</span> Auth</a></li>
-        <li><a href="#7-email--background-jobs"><span class="toc-num">07</span> Email &amp; jobs</a></li>
-        <li><a href="#8-storage"><span class="toc-num">08</span> Storage</a></li>
-        <li><a href="#9-frontend"><span class="toc-num">09</span> Frontend</a></li>
-        <li><a href="#10-codebase-tour"><span class="toc-num">10</span> Codebase tour</a></li>
-        <li><a href="#11-running-locally"><span class="toc-num">11</span> Running locally</a></li>
-        <li><a href="#12-testing"><span class="toc-num">12</span> Testing</a></li>
-        <li><a href="#13-glossary"><span class="toc-num">13</span> Glossary</a></li>
+        <li><a href="#3-the-lifecycle-of-a-claim"><span class="toc-num">03</span> The lifecycle of a claim</a></li>
+        <li><a href="#4-claim-ownership-accountability"><span class="toc-num">04</span> Claim ownership &amp; accountability</a></li>
+        <li><a href="#5-the-supporting-records"><span class="toc-num">05</span> The supporting records</a></li>
+        <li><a href="#6-walkthroughs-by-role"><span class="toc-num">06</span> Walkthroughs by role</a></li>
+        <li><a href="#7-account-suspension"><span class="toc-num">07</span> Account suspension</a></li>
+        <li><a href="#8-the-audit-log"><span class="toc-num">08</span> The audit log</a></li>
+        <li><a href="#9-authentication-authorization"><span class="toc-num">09</span> Authentication &amp; authorization</a></li>
+        <li><a href="#10-dashboards-analytics"><span class="toc-num">10</span> Dashboards &amp; analytics</a></li>
+        <li><a href="#11-operating-the-platform"><span class="toc-num">11</span> Operating the platform</a></li>
+        <li><a href="#12-email-background-jobs"><span class="toc-num">12</span> Email &amp; background jobs</a></li>
+        <li><a href="#13-storage"><span class="toc-num">13</span> Storage</a></li>
+        <li><a href="#14-frontend"><span class="toc-num">14</span> Frontend</a></li>
+        <li><a href="#15-codebase-tour"><span class="toc-num">15</span> Codebase tour</a></li>
+        <li><a href="#16-running-locally"><span class="toc-num">16</span> Running locally</a></li>
+        <li><a href="#17-testing"><span class="toc-num">17</span> Testing</a></li>
+        <li><a href="#18-glossary"><span class="toc-num">18</span> Glossary</a></li>
       </ol>
     </aside>
 
     <article>
-
-      <header>
-        <div class="eyebrow">System manual</div>
-        <h1>Kasagadi AI — How the platform works</h1>
-        <p>A working reference for how the Kasagadi AI fact-checking platform is built and how it behaves. Useful to a new engineer, a product person reasoning about the lifecycle of a claim, or a designer wanting to know which states each screen represents.</p>
-      </header>
+      <p>A working reference for how the Kasagadi AI fact-checking platform is built and how it
+behaves. Useful to a new engineer joining the team, a product or operations person who
+needs to reason about the lifecycle of a claim and who is accountable for it, or a
+designer wanting to know which states each screen represents.</p>
 
       <section>
         <h2 id="1-what-the-platform-does"><span class="h2-num">01</span> What the platform does</h2>
-        <p>Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit claims they want investigated. Admins triage those claims and assign them to accredited fact checkers. Fact checkers research the claim, write a verdict, and submit it back. Admins approve the verdict for publication, at which point the claim becomes visible on the public marketplace.</p>
-        <p>The platform is built so that the journey from "I saw a suspicious headline" to "here is a verified verdict with evidence and a research trail" lives in one auditable system.</p>
+
+
+<p>Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit
+claims they want investigated. Admins triage those claims and assign them to accredited
+fact checkers. Fact checkers research the claim, write a verdict, and submit it back. The
+<strong>admin who assigned the claim owns it</strong> and is the only one who can approve and publish
+the verdict, at which point the claim becomes visible on the public marketplace. A single
+<strong>Super Admin</strong> oversees the whole platform: admins, fact-checker accounts, global claim
+visibility, the audit trail, and platform analytics.</p>
+
+<p>The platform is built so that the journey from &quot;I saw a suspicious headline&quot; to &quot;here is a
+verified verdict with evidence and a research trail&quot; lives in one <strong>auditable, accountable</strong>
+system — every consequential action is attributed to a person and recorded.</p>
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="2-the-actors"><span class="h2-num">02</span> The actors</h2>
-        <p>There are three roles. A <code>User</code> record holds the credentials and shared profile (name, email, avatar). A user becomes one of three roles by being associated with a <code>Member</code>, <code>FactChecker</code>, or <code>Admin</code> profile record. The role helpers (<code>user.member?</code>, <code>user.fact_checker?</code>, <code>user.admin?</code>) drive routing and authorization.</p>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Role</th><th>How they get one</th><th>What they can do</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Member</strong></td>
-                <td>Self-signs up at <code>/registration/new</code></td>
-                <td>Submit claims, save drafts, edit/destroy own drafts, browse the marketplace</td>
-              </tr>
-              <tr>
-                <td><strong>Fact checker</strong></td>
-                <td>Invited by an admin (<code>/admins/invitations</code>)</td>
-                <td>View their assignments, accept/reject them, submit verdicts</td>
-              </tr>
-              <tr>
-                <td><strong>Admin</strong></td>
-                <td>Provisioned manually (no public sign-up)</td>
-                <td>Triage claims, assign checkers, approve/archive, invite fact checkers</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
 
-        <p>Public visitors (no account) can browse the marketplace and read published claims.</p>
+<p>A <code>User</code> record holds the credentials and shared profile (name, email, avatar). A user
+becomes a role by being associated with a <code>Member</code>, <code>FactChecker</code>, or <code>Admin</code> profile
+record. The <strong>Super Admin</strong> is an <code>Admin</code> with the <code>super_admin</code> flag set. Role helpers
+(<code>user.member?</code>, <code>user.fact_checker?</code>, <code>user.admin?</code>, <code>user.super_admin?</code>) drive routing
+and authorization.</p>
+
+<table><thead>
+<tr>
+<th>Role</th>
+<th>How they get one</th>
+<th>What they can do</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><strong>Member</strong></td>
+<td>Self-signs up at <code>/registration/new</code></td>
+<td>Submit claims, save drafts, edit/destroy own drafts, browse the marketplace, view their own claims in every state</td>
+</tr>
+<tr>
+<td><strong>Fact checker</strong></td>
+<td>Invited by an admin (<code>/admins/invitations</code>)</td>
+<td>View assignments, accept/reject them, upload evidence &amp; research, recommend a verdict, mark work complete</td>
+</tr>
+<tr>
+<td><strong>Admin</strong></td>
+<td>Invited by the Super Admin (no public sign-up)</td>
+<td>Triage claims, assign/reassign fact checkers, <strong>own</strong> claims they assign, approve/unpublish/republish <strong>their own</strong> claims, transfer ownership, invite fact checkers, manage news posts</td>
+</tr>
+<tr>
+<td><strong>Super Admin</strong></td>
+<td>Promoted from an existing admin (exactly one)</td>
+<td>Everything an admin can do, <strong>plus</strong> invite/suspend/activate admins, reset admin passwords, suspend/reactivate fact checkers, see every claim (incl. drafts), view the audit log and per-admin performance</td>
+</tr>
+</tbody></table>
+
+<p>Public visitors (no account) can browse the marketplace and read published claims.</p>
+
+<h3 id="capability-matrix">Capability matrix</h3>
+
+<table><thead>
+<tr>
+<th>Action</th>
+<th style="text-align: center">Member</th>
+<th style="text-align: center">Fact checker</th>
+<th style="text-align: center">Admin</th>
+<th style="text-align: center">Super Admin</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>Submit a claim</td>
+<td style="text-align: center">✅</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+</tr>
+<tr>
+<td>Assign / reassign a fact checker</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+<td style="text-align: center">✅</td>
+</tr>
+<tr>
+<td>Submit a verdict</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+</tr>
+<tr>
+<td>Publish / unpublish a claim</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">owner only</td>
+<td style="text-align: center">owner only</td>
+</tr>
+<tr>
+<td>Transfer claim ownership</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">owner only</td>
+<td style="text-align: center">owner only</td>
+</tr>
+<tr>
+<td>Invite a fact checker</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+<td style="text-align: center">✅</td>
+</tr>
+<tr>
+<td>Invite an admin</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+</tr>
+<tr>
+<td>Suspend / reactivate an account</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+</tr>
+<tr>
+<td>Reset an admin&#39;s password</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+</tr>
+<tr>
+<td>See drafts / every claim</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+</tr>
+<tr>
+<td>View the audit log</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">—</td>
+<td style="text-align: center">✅</td>
+</tr>
+</tbody></table>
+
+<blockquote>
+<p><strong>Key accountability rule:</strong> a claim has exactly <strong>one owner admin</strong> at a time, and only
+that admin can publish, unpublish, republish, or transfer it. The Super Admin has full
+<em>visibility</em> but does <strong>not</strong> override ownership — their oversight role grants no publish
+power over claims they don&#39;t own.</p>
+</blockquote>
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="3-the-lifecycle-of-a-claim"><span class="h2-num">03</span> The lifecycle of a claim</h2>
-        <p>A claim moves through four states, governed by the AASM state machine on the <code>Claim</code> model. The transitions and who triggers them:</p>
 
-        <div class="diagram">
-<pre>                ┌───────────────────────────────────────────────────────┐
-                │                                                       │
-                ▼                                                       │
-   ┌────────┐   submit    ┌─────────────────────┐   assign_checker      │
-   │ draft  │ ──────────► │ pending_assignment  │ ────────────────┐     │
-   └────────┘  (member)   └─────────────────────┘                 │     │
-                                ▲                                 ▼     │
-                                │ reject_assignment   ┌─────────────────┐
-                                └──────────────────── │   in_progress   │
-                                  (fact checker)      └─────────────────┘
-                                                                  │
-                                                                  │ approve
-                                                                  ▼  (admin)
-                                                          ┌─────────────┐
-                                                          │  published  │
-                                                          └─────────────┘</pre>
-        </div>
 
-        <p>State-by-state:</p>
-        <ul>
-          <li><strong>draft</strong> — the member is composing the claim. Validations on title/content/source/topic/region are skipped while drafting (controlled by <code>Claim#skip_presence_validation?</code>). Drafts are private to the member; they can be edited and destroyed freely.</li>
-          <li><strong>pending_assignment</strong> — submitted to the platform, waiting for an admin to assign a fact checker. Visible in the admin queue.</li>
-          <li><strong>in_progress</strong> — a <code>FactChecker</code> has been assigned. The <code>Assignment</code> row tracks the due date, notes from admin, and its own status (<code>pending</code> → <code>in_progress</code> → <code>completed</code> / <code>rejected</code>).</li>
-          <li><strong>published</strong> — the verification is approved by an admin and the claim is live on the public marketplace (provided <code>is_archived</code> is <code>false</code>).</li>
-        </ul>
+<p>A claim moves through five states, governed by the AASM state machine on the <code>Claim</code>
+model. The transitions and who triggers them:</p>
 
-        <div class="note">
-          <strong>Note:</strong> <code>is_archived</code> is an orthogonal boolean. An admin can archive any claim at any time to hide it from members and the public. Unarchive restores it.
-        </div>
+<pre><code>   ┌────────┐   submit    ┌─────────────────────┐   assign_checker     ┌─────────────────┐
+   │ draft  │ ──────────► │ pending_assignment  │ ───────────────────► │   in_progress   │
+   └────────┘  (member)   └─────────────────────┘   (admin → owner)    └─────────────────┘
+                                ▲                                          │   │
+                                │ reject_assignment (fact checker)         │   │ approve
+                                └──────────────────────────────────────────┘   ▼  (owner admin)
+                                                                        ┌─────────────┐
+                                                          republish     │  published  │
+                                                       ┌───────────────►└─────────────┘
+                                                       │                       │ unpublish
+                                              ┌─────────────────┐              ▼  (owner admin)
+                                              │  unpublished    │◄─────────────┘
+                                              └─────────────────┘
+</code></pre>
 
-        <h3>Derived helpers</h3>
-        <p>The Claim model exposes a few "computed states" that combine the AASM state and the Assignment / Verification rows. These power the UI badges:</p>
-        <ul>
-          <li><code>awaiting_review?</code> — <code>in_progress</code> with a <code>pending</code> assignment (fact checker hasn't started yet)</li>
-          <li><code>under_review?</code> — <code>in_progress</code> with an <code>in_progress</code> assignment (actively being worked)</li>
-          <li><code>awaiting_approval?</code> — <code>in_progress</code> with a verification submitted (waiting for admin approval)</li>
-        </ul>
+<p>State-by-state:</p>
+
+<ul>
+<li><strong>draft</strong> — the member is composing the claim. Validations on title/content/source/
+topic/region are skipped while drafting (<code>Claim#skip_presence_validation?</code>). Drafts are
+private to the member; only the Super Admin can also see them.</li>
+<li><strong>pending_assignment</strong> — submitted to the platform, waiting for an admin to assign a fact
+checker. Has <strong>no owner yet</strong>.</li>
+<li><strong>in_progress</strong> — a <code>FactChecker</code> has been assigned. The assigning admin becomes the
+<strong>owner</strong> (<code>claim.owner_admin</code>). The <code>Assignment</code> row tracks the due date, admin notes,
+and its own status (<code>pending → in_progress → completed / rejected</code>).</li>
+<li><strong>published</strong> — the owner admin approved the verification; the claim is live on the public
+marketplace and <code>verification.published_at</code> is stamped with the approval time.</li>
+<li><strong>unpublished</strong> — the owner admin hid a previously published claim from the public and
+members. <code>republish</code> restores it (and keeps the original publish date).</li>
+</ul>
+
+<p>The state machine lives in <a href="https://github.com/KasagadiTech/kasagandi_platform/blob/main/app/models/claim.rb"><code>app/models/claim.rb</code></a>.</p>
+
+<blockquote>
+<p><strong>Note:</strong> earlier versions used an <code>is_archived</code> boolean. That no longer exists — hiding a
+claim is the <code>unpublished</code> <strong>state</strong> reached via the <code>unpublish</code> event, and restoring it is
+<code>republish</code>.</p>
+</blockquote>
+
+<h3 id="derived-helpers">Derived helpers</h3>
+
+<p>The Claim model exposes &quot;computed states&quot; that combine the AASM state with the Assignment /
+Verification rows. These power the UI badges:</p>
+
+<ul>
+<li><code>awaiting_review?</code> — <code>in_progress</code> with a <code>pending</code> assignment (checker hasn&#39;t started)</li>
+<li><code>under_review?</code> — <code>in_progress</code> with an <code>in_progress</code> assignment (actively worked)</li>
+<li><code>awaiting_approval?</code> — <code>in_progress</code> with a verification submitted (waiting for the owner
+admin to approve)</li>
+<li><code>owned_by?(admin)</code> / <code>publishable_by?(admin)</code> — true only for the claim&#39;s owner admin</li>
+</ul>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="4-the-supporting-records"><span class="h2-num">04</span> The supporting records</h2>
-        <ul>
-          <li><strong>Evidence</strong> — many per claim. Each one has a description plus optional file attachments (images, videos, PDFs, etc., via Active Storage). Members add evidence when submitting a claim.</li>
-          <li><strong>Assignment</strong> — one per claim. Tracks who's assigned, who assigned them, the due date, notes, and status. An assignment fires <code>ClaimMailer.assigned</code> on creation and on a fact-checker swap (but not on same-checker re-saves).</li>
-          <li><strong>Verification</strong> — one per claim. The fact checker's verdict (<code>true</code>, <code>false</code>, <code>misleading</code>, <code>partly_true</code>, <code>unverifiable</code>), summary, research write-up, and reference link.</li>
-        </ul>
+        <h2 id="4-claim-ownership-accountability"><span class="h2-num">04</span> Claim ownership &amp; accountability</h2>
+
+
+<p>Ownership is the backbone of the accountability model.</p>
+
+<ul>
+<li><strong>When ownership attaches:</strong> the moment an admin assigns a fact checker, that admin
+becomes <code>owner_admin</code>. Reassigning to a different checker does <strong>not</strong> change ownership.</li>
+<li><strong>Who can publish:</strong> only the owner admin can run <code>approve</code> (publish), <code>unpublish</code>, or
+<code>republish</code>. The button is hidden for other admins, and the controller rejects the action
+server-side — so it can&#39;t be forced via a crafted request. Non-owners see an &quot;Owned by …&quot;
+context instead.</li>
+<li><strong>Transfer:</strong> the owner admin can hand a claim to another <strong>active</strong> admin. The transfer
+is recorded in the audit log (<code>from_admin_id</code> → <code>to_admin_id</code>). Transferring to a suspended
+admin is blocked (they could never publish, which would orphan the claim).</li>
+<li><strong>Awaiting approval:</strong> the owner&#39;s dashboard surfaces an &quot;Awaiting your approval&quot; list —
+claims they own whose fact checker has submitted a verdict. It previews the most recent 8
+with a &quot;View all&quot; link to the owner-scoped claims view.</li>
+</ul>
+
+<p>The Super Admin&#39;s claims view shows <strong>every</strong> claim (including drafts) read-only, with owner,
+fact checker, and the assigned / completed / published dates.</p>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="5-walkthroughs-by-role"><span class="h2-num">05</span> Walkthroughs by role</h2>
+        <h2 id="5-the-supporting-records"><span class="h2-num">05</span> The supporting records</h2>
 
-        <h3>5.1 Member</h3>
-        <ol>
-          <li>Signs up at <code>/registration/new</code>. The controller creates a <code>User</code> and an associated <code>Member</code> row, signs them in, and lands them on <code>/members/dashboard</code>.</li>
-          <li>Goes to <code>/members/claims/new</code>. Fills in title, content, source, topic, region, and adds zero or more evidence rows (each with description and optional files).</li>
-          <li>Two submission paths from the same form:
-            <ul>
-              <li><strong>Submit</strong> — runs the <code>submit</code> AASM event and moves the claim to <code>pending_assignment</code>. Required fields are validated.</li>
-              <li><strong>Save draft</strong> — keeps it as <code>draft</code> with relaxed validation so partial work can be saved.</li>
-            </ul>
-          </li>
-          <li>Drafts can be edited (<code>/members/claims/:id/edit</code>) and destroyed. Submitted claims cannot.</li>
-          <li>When admin approves a verdict, the member receives <code>ClaimMailer.published</code> with a link to the marketplace page.</li>
-        </ol>
 
-        <h3>5.2 Fact checker</h3>
-        <ol>
-          <li>An admin invites them by email at <code>/admins/invitations/new</code>.</li>
-          <li>The invitee receives <code>InvitationMailer</code> with a link to <code>/invitations/:token/accept</code>. Tokens are 24-hour, single-use.</li>
-          <li>They complete a registration form on the acceptance page. This creates the <code>User</code> + <code>FactChecker</code> + (already-existing) <code>Invitation</code> flip to <code>accepted</code>, then signs them in.</li>
-          <li>They land on <code>/fact_checkers/dashboard</code> showing pending / in-progress / completed counts and verdict breakdown.</li>
-          <li>From <code>/fact_checkers/assignments</code> they can filter and search the queue. Opening an assignment shows the claim, evidence, and an inline verdict form.</li>
-          <li>Three actions on an assignment:
-            <ul>
-              <li><strong>Start review</strong> (<code>event=start_review</code>) — moves the assignment from <code>pending</code> to <code>in_progress</code>. The claim stays in <code>in_progress</code> (AASM-wise) — only the assignment row changes.</li>
-              <li><strong>Reject assignment</strong> (<code>event=reject_assignment</code>) — sends the claim back to <code>pending_assignment</code> (admin can reassign) and marks the assignment row <code>rejected</code>. Wrapped in a transaction so the two writes can't desync.</li>
-              <li><strong>Submit verdict</strong> (no event param, just the <code>verdict[…]</code> payload) — creates a <code>Verification</code> row and marks the assignment <code>completed</code>. Admin still has to approve before publication.</li>
-            </ul>
-          </li>
-        </ol>
-
-        <h3>5.3 Admin</h3>
-        <ol>
-          <li>Signs in at <code>/session/new</code> (no public admin sign-up — admins are seeded or created in console).</li>
-          <li>Lands on <code>/admins/dashboard</code>.</li>
-          <li>From <code>/admins/claims</code> they can filter by status, topic, region, search, and open any claim. The show page exposes:
-            <ul>
-              <li><strong>Assign</strong> — pick a fact checker, set a due date, add notes. Creates an <code>Assignment</code> (or updates an existing one for reassign). Triggers <code>ClaimMailer.assigned</code> on first assign and on fact-checker change.</li>
-              <li><strong>Approve</strong> (<code>event=approve</code>) — runs the <code>approve</code> AASM event, publishing the claim. Triggers <code>ClaimMailer.published</code> to the member.</li>
-              <li><strong>Archive / Unarchive</strong> (<code>event=archive</code> / <code>event=unarchive</code>) — toggles <code>is_archived</code>. Hides from public and member views.</li>
-            </ul>
-          </li>
-          <li>From <code>/admins/invitations</code> they can invite fact checkers, view pending invitations, resend expired ones (which generates a fresh token + 24h window).</li>
-        </ol>
-
-        <h3>5.4 Public visitor</h3>
-        <ul>
-          <li><code>/marketplace</code> — paginated, filterable list of <code>published</code> non-archived claims with verdicts, topics, regions, and search.</li>
-          <li><code>/marketplace/:id</code> — full claim detail: verdict, claim body, evidence, research, fact-checker attribution. Related claims by topic at the bottom.</li>
-        </ul>
+<ul>
+<li><strong>Evidence</strong> — many per claim. Description plus optional file attachments (images, videos,
+PDFs via Active Storage). Members add evidence when submitting.</li>
+<li><strong>Assignment</strong> — one per claim. Tracks the fact checker, the assigning admin
+(<code>assigned_by</code>), due date, notes, and status. Fires <code>ClaimMailer.assigned</code> on creation and
+on a fact-checker swap (not on same-checker re-saves).</li>
+<li><strong>Verification</strong> — one per claim. The fact checker&#39;s verdict (<code>true</code>, <code>false</code>,
+<code>misleading</code>, <code>partly_true</code>, <code>unverifiable</code>), summary, research write-up, reference link,
+and <code>published_at</code> (stamped when the owner admin approves — <em>not</em> at verdict submission).</li>
+<li><strong>AuditLog</strong> — an immutable, append-only event record. One row per consequential action:
+who did it (<code>actor</code>), what (<code>action</code>), to which record (polymorphic <code>auditable</code>), and
+metadata. See §8.</li>
+</ul>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="6-authentication--authorization"><span class="h2-num">06</span> Authentication &amp; authorization</h2>
-        <ul>
-          <li><strong>Sessions</strong> — cookie-based, signed cookie holds a <code>Session.id</code>. Stored in the DB so sessions can be terminated server-side. Every request is gated by <code>Authentication#require_authentication</code> unless the controller opts out with <code>allow_unauthenticated_access</code>.</li>
-          <li><strong>Role gating</strong> — the three role-namespaced base controllers (<code>Members::BaseController</code>, <code>FactCheckers::BaseController</code>, <code>Admins::BaseController</code>) enforce the role check via <code>before_action</code>. Hitting an admin URL as a member redirects to root.</li>
-          <li><strong>Authorization</strong> — Pundit is wired in (<code>include Pundit::Authorization</code>). Currently only <code>ClaimPolicy</code> is in active use; most authorization happens via the role gates above and scope filtering inside controllers (e.g. fact-checker assignments are always scoped to <code>current_fact_checker.assignments</code>).</li>
-          <li><strong>Password reset</strong> — <code>User.generates_token_for(:password_reset)</code> creates a 15-minute signed token bound to the password salt, so changing the password invalidates any outstanding tokens. Reset flow lives in <code>PasswordsController</code>. Request always returns the same generic notice regardless of whether the email exists, to avoid leaking account existence.</li>
-        </ul>
+        <h2 id="6-walkthroughs-by-role"><span class="h2-num">06</span> Walkthroughs by role</h2>
+
+
+<h3 id="61-member">6.1 Member</h3>
+
+<ol>
+<li>Signs up at <code>/registration/new</code> → a <code>User</code> + <code>Member</code> are created, signed in, landed on
+<code>/members/dashboard</code>.</li>
+<li><code>/members/claims/new</code> — fills title, content, source, topic, region, and zero or more
+evidence rows.</li>
+<li><strong>Submit</strong> runs the <code>submit</code> event → <code>pending_assignment</code> (validated). <strong>Save draft</strong>
+keeps it as <code>draft</code> with relaxed validation.</li>
+<li>Drafts can be edited/destroyed; submitted claims cannot.</li>
+<li>On publication the member receives <code>ClaimMailer.published</code>.</li>
+<li>A <strong>suspended</strong> member cannot sign in at all (see §7).</li>
+</ol>
+
+<h3 id="62-fact-checker">6.2 Fact checker</h3>
+
+<ol>
+<li>An admin invites them by email at <code>/admins/invitations/new</code> (24-hour, single-use token).</li>
+<li>They accept at <code>/invitations/:token/accept</code>, which creates the <code>User</code> + <code>FactChecker</code>,
+flips the invitation to <code>accepted</code>, and signs them in.</li>
+<li><code>/fact_checkers/dashboard</code> shows pending / in-progress / completed counts, a verdict
+breakdown, and <strong>recent verdicts ordered by submission time</strong>.</li>
+<li>From <code>/fact_checkers/assignments</code> they filter/search the queue and open an assignment.</li>
+<li>Three actions:
+
+<ul>
+<li><strong>Start review</strong> — assignment <code>pending → in_progress</code> (claim stays <code>in_progress</code>).</li>
+<li><strong>Reject assignment</strong> — claim back to <code>pending_assignment</code>, assignment marked
+<code>rejected</code>; writes a <code>rejected</code> audit entry. Wrapped in a transaction.</li>
+<li><strong>Submit verdict</strong> — creates the <code>Verification</code>, marks the assignment <code>completed</code>, and
+writes a <code>completed</code> audit entry. The claim is now <em>awaiting approval</em> — the owner admin
+still has to publish.</li>
+</ul></li>
+<li>Fact checkers never publish, assign, transfer, or change ownership. A <strong>suspended</strong> fact
+checker can&#39;t sign in, and can&#39;t be assigned new claims.</li>
+</ol>
+
+<h3 id="63-admin">6.3 Admin</h3>
+
+<ol>
+<li>Signs in at <code>/session/new</code> (no public admin sign-up — admins are invited by the Super
+Admin).</li>
+<li>Lands on <code>/admins/dashboard</code>, which includes an <strong>&quot;Awaiting your approval&quot;</strong> section for
+claims they own.</li>
+<li>From <code>/admins/claims</code> they filter by status/topic/region, search, and open a claim:
+
+<ul>
+<li><strong>Assign / reassign</strong> — pick a fact checker (suspended ones are not offered), set a due
+date and notes. First assignment makes the admin the <strong>owner</strong> and writes an <code>assigned</code>
+audit entry.</li>
+<li><strong>Approve &amp; publish</strong> (owner only) — runs <code>approve</code>, stamps <code>published_at</code>, writes a
+<code>published</code> audit entry, and emails the member. Only shown once a verdict exists.</li>
+<li><strong>Unpublish / Republish</strong> (owner only) — hides/restores the claim; audited.</li>
+<li><strong>Transfer ownership</strong> (owner only) — hand the claim to another active admin; audited.</li>
+</ul></li>
+<li>From <code>/admins/invitations</code> an admin can invite <strong>fact checkers</strong> (the role is locked to
+fact-checker for ordinary admins), view/resend invitations.</li>
+<li>Admins can post and manage news.</li>
+</ol>
+
+<h3 id="64-super-admin">6.4 Super Admin</h3>
+
+<p>The Super Admin is an admin with the <code>super_admin</code> flag. There is <strong>exactly one</strong>, enforced
+by a database partial-unique index. They keep full admin abilities and gain an
+<strong>Administration</strong> area in the sidebar:</p>
+
+<ol>
+<li><strong>Admins</strong> (<code>/super_admins/admins</code>) — list every admin; open an admin&#39;s page to see their
+performance (claims <strong>owned / published / awaiting approval / in progress</strong>) and the claims
+they own. From there: <strong>suspend / reactivate</strong> the account, <strong>reset password</strong>, or (from
+the list header) <strong>invite a new admin</strong>. They can&#39;t suspend themselves or the super-admin
+account.</li>
+<li><strong>Fact checkers</strong> — the existing <code>/admins/fact_checkers</code> pages gain <strong>suspend / reactivate</strong>
+controls that only the Super Admin sees.</li>
+<li><strong>Claims</strong> — the standard <code>/admins/claims</code> list, but the Super Admin additionally sees a
+<strong>Drafts</strong> tab and drafts in &quot;All&quot; (full platform visibility). Still read-only oversight —
+they can only publish/transfer claims they personally own.</li>
+<li><strong>Audit Log</strong> (<code>/super_admins/audit_logs</code>) — the full activity feed, filterable by actor
+and date range (see §8).</li>
+</ol>
+
+<p>Provisioning the Super Admin is an operations task — see §11.</p>
+
+<h3 id="65-public-visitor">6.5 Public visitor</h3>
+
+<ul>
+<li><code>/marketplace</code> — paginated, filterable list of <strong>published</strong> claims with verdicts, topics,
+regions, search.</li>
+<li><code>/marketplace/:id</code> — full claim detail: verdict, body, evidence, research, fact-checker
+attribution, and <strong>published date + publishing admin</strong>. Related claims by topic at the
+bottom.</li>
+</ul>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="7-email--background-jobs"><span class="h2-num">07</span> Email &amp; background jobs</h2>
-        <ul>
-          <li><strong>Mailers</strong>: <code>ClaimMailer</code> (assigned, published), <code>InvitationMailer</code>, <code>PasswordsMailer</code>.</li>
-          <li>All mailer dispatches use <code>deliver_later</code>, queued through Solid Queue (the database-backed Active Job adapter; runs in-process if <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
-          <li>Triggers:
-            <ul>
-              <li><code>ClaimMailer.assigned</code> — <code>Assignment</code> <code>after_create_commit</code> and on update if <code>fact_checker_id</code> changes</li>
-              <li><code>ClaimMailer.published</code> — Claim AASM <code>:approve</code> event <code>after_commit</code></li>
-              <li><code>InvitationMailer</code> — explicit dispatch in the admin invitations controller</li>
-              <li><code>PasswordsMailer.reset</code> — explicit dispatch in <code>PasswordsController#create</code></li>
-            </ul>
-          </li>
-        </ul>
+        <h2 id="7-account-suspension"><span class="h2-num">07</span> Account suspension</h2>
+
+
+<p>Any account can be set <code>active</code> or <code>suspended</code> (<code>users.status</code>). Suspension is a hard block
+on access, enforced in depth:</p>
+
+<ul>
+<li><strong>Login</strong> — <code>SessionsController#create</code> refuses a suspended user.</li>
+<li><strong>Existing sessions</strong> — <code>User#suspend!</code> destroys all of the user&#39;s sessions in a
+transaction, so they&#39;re signed out everywhere immediately.</li>
+<li><strong>Session resume</strong> — <code>Authentication#find_session_by_cookie</code> won&#39;t resume a session whose
+user isn&#39;t <code>active_for_auth?</code>.</li>
+<li><strong>Password reset</strong> — self-service reset is refused for suspended users; the Super Admin&#39;s
+&quot;reset password&quot; is also refused until the account is reactivated.</li>
+<li><strong>Real-time</strong> — <code>ApplicationCable::Connection</code> refuses a suspended user, so they get no
+live Turbo Stream updates.</li>
+<li><strong>Work routing</strong> — suspended fact checkers can&#39;t be assigned claims; suspended admins can&#39;t
+receive transferred ownership.</li>
+</ul>
+
+<p>Who can suspend whom: the <strong>Super Admin</strong> suspends/reactivates admins and fact checkers. The
+controls live on each account&#39;s page (and the Admins list), never for the Super Admin&#39;s own
+account.</p>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="8-storage"><span class="h2-num">08</span> Storage</h2>
-        <p>Active Storage is configured for two services:</p>
-        <ul>
-          <li><strong>local</strong> — disk-based, used in development.</li>
-          <li><strong>cloudflare</strong> — Cloudflare R2 (S3-compatible) via the <code>aws-sdk-s3</code> gem. R2 quirks handled in <code>config/storage.yml</code>: <code>force_path_style: true</code>, <code>request_checksum_calculation: when_required</code>, <code>response_checksum_validation: when_required</code>.</li>
-        </ul>
-        <p>Cover images on claims are auto-promoted from the first attached image among the evidence files (see <code>Claim#promote_cover_image_from_evidence</code>), so members don't have to upload a separate hero image.</p>
-        <p>The shared partial <code>shared/_attachment.html.erb</code> renders any attachment with the right treatment: images and <code>mp4/webm/ogg</code> videos play inline (with a download button overlay); other types render as a clean file card. <code>shared/_attachment_grid.html.erb</code> splits visual vs. file attachments and lays them out together.</p>
+        <h2 id="8-the-audit-log"><span class="h2-num">08</span> The audit log</h2>
+
+
+<p>Every consequential action writes an immutable <code>AuditLog</code> row: <code>actor</code> (the User who did
+it), <code>action</code>, a polymorphic <code>auditable</code> (usually a Claim or User), <code>metadata</code> (JSONB), and
+<code>created_at</code>. The model blocks updates and deletes, so the trail can&#39;t be tampered with.</p>
+
+<p>Actions recorded today:</p>
+
+<table><thead>
+<tr>
+<th>Action</th>
+<th>Written when</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>assigned</code></td>
+<td>An admin assigns a fact checker (becomes owner)</td>
+</tr>
+<tr>
+<td><code>completed</code></td>
+<td>A fact checker submits a verdict</td>
+</tr>
+<tr>
+<td><code>rejected</code></td>
+<td>A fact checker rejects an assignment</td>
+</tr>
+<tr>
+<td><code>published</code></td>
+<td>The owner admin approves/publishes</td>
+</tr>
+<tr>
+<td><code>unpublished</code> / <code>republished</code></td>
+<td>The owner admin hides / restores a claim</td>
+</tr>
+<tr>
+<td><code>transferred</code></td>
+<td>Ownership moves between admins (<code>from</code>/<code>to</code> in metadata)</td>
+</tr>
+<tr>
+<td><code>suspended</code> / <code>activated</code></td>
+<td>An account is suspended / reactivated</td>
+</tr>
+<tr>
+<td><code>invited</code></td>
+<td>An invitation is sent (role in metadata)</td>
+</tr>
+<tr>
+<td><code>password_reset</code></td>
+<td>The Super Admin triggers a password reset</td>
+</tr>
+</tbody></table>
+
+<p>The Super Admin reads the feed at <code>/super_admins/audit_logs</code>, newest first, filterable by
+<strong>actor</strong> and <strong>date range</strong>. It reads like &quot;Admin A assigned Claim #100&quot;, &quot;Fact Checker B
+completed Claim #100&quot;, &quot;Admin A transferred Claim #101 to Admin C&quot;.</p>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="9-frontend"><span class="h2-num">09</span> Frontend</h2>
-        <ul>
-          <li><strong>Tailwind CSS 4</strong> with a custom Ghana-inspired palette (charcoal primary, gold accent, green success, red danger). Defined in <code>app/assets/tailwind/application.css</code>.</li>
-          <li><strong>Stimulus</strong> for sprinkles of interactivity — accordions (<code>evidence_accordion_controller</code>), file upload previews (<code>file_picker_controller</code>, <code>image_skeleton_controller</code>), the verdict picker, the multi-step claim form (<code>members_claim_form_controller</code>), etc.</li>
-          <li><strong>Material Symbols</strong> outline font for icons; SVG inline for special cases (chevrons, paper clips).</li>
-          <li><strong>Plus Jakarta Sans</strong> as the display font (no serifs, intentional choice).</li>
-        </ul>
-        <p>Page-level layout conventions:</p>
-        <ul>
-          <li>Marketplace and inner pages: <code>max-w-7xl</code> for list pages, <code>max-w-6xl</code> for detail pages.</li>
-          <li>Section headers on portal/detail pages: left-aligned title, right-aligned meta; homepage sections are centered.</li>
-          <li>"Back" links: omitted on editorial pages (marketplace), included on portal detail pages.</li>
-        </ul>
+        <h2 id="9-authentication-authorization"><span class="h2-num">09</span> Authentication &amp; authorization</h2>
+
+
+<ul>
+<li><strong>Sessions</strong> — cookie-based; a signed cookie holds a <code>Session.id</code> stored in the DB, so
+sessions can be terminated server-side. Every request is gated by
+<code>Authentication#require_authentication</code> unless a controller opts out with
+<code>allow_unauthenticated_access</code>. Suspended users are rejected at login and on resume (§7).</li>
+<li><strong>Role gating</strong> — role-namespaced base controllers (<code>Members::BaseController</code>,
+<code>FactCheckers::BaseController</code>, <code>Admins::BaseController</code>) enforce the role via
+<code>before_action</code>. <code>SuperAdmins::BaseController</code> inherits the admin gate and adds
+<code>ensure_super_admin</code> (shared <code>SuperAdminGuard</code> concern). Hitting a forbidden URL redirects
+away.</li>
+<li><strong>Ownership gating</strong> — publish/unpublish/republish/transfer check <code>claim.owned_by?</code> /
+<code>publishable_by?</code> in both the view (hide controls) and the controller (reject the request).</li>
+<li><strong>Single super admin</strong> — a partial unique index on <code>admins.super_admin</code> guarantees at most
+one.</li>
+<li><strong>Password reset</strong> — <code>User.generates_token_for(:password_reset)</code> mints a 15-minute signed
+token bound to the password salt, so changing the password invalidates outstanding tokens.
+The request always returns the same generic notice to avoid leaking account existence.</li>
+</ul>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="10-codebase-tour"><span class="h2-num">10</span> Codebase tour</h2>
-        <p>Where things live:</p>
+        <h2 id="10-dashboards-analytics"><span class="h2-num">10</span> Dashboards &amp; analytics</h2>
+
+
+<p>The admin dashboard renders lazy-loaded chart frames built by
+<code>Admins::DashboardChartBuilder</code>. What each one <strong>counts</strong>:</p>
+
+<ul>
+<li><strong>Claim pipeline</strong> — all non-draft claims by stage: Pending, In progress, <strong>Awaiting</strong>
+(in_progress with a verdict), Published, Unpublished. (Awaiting is split out of In progress
+so the two don&#39;t double-count.)</li>
+<li><strong>Verification requests</strong> — <code>Assignment</code> lifecycle (pending / in progress / completed /
+rejected) and average completion time.</li>
+<li><strong>Published claims by category / by verdict</strong> — <strong>published claims only</strong>, by topic or by
+verdict, so the two views reconcile to the same total.</li>
+<li><strong>Claims submitted</strong> — claims by <code>created_at</code> (submission date).</li>
+<li><strong>Fact-checks published</strong> — published claims by <code>verification.published_at</code> (the real
+approval/publish date). Long ranges (90 days / all time) are bucketed by week or month so
+sparse data stays readable; the current period is highlighted.</li>
+<li><strong>Top fact-checkers</strong> — by <strong>published</strong> verdicts. <strong>Top members</strong> — by <strong>published</strong> claims.</li>
+</ul>
+
+<p>The Super Admin also gets <strong>per-admin performance</strong> (owned / published / awaiting / in
+progress) on each admin&#39;s page, and <strong>system activity</strong> via the audit log.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="11-operating-the-platform"><span class="h2-num">11</span> Operating the platform</h2>
+
+
+<p>Day-two operations, mostly for the Super Admin / ops.</p>
+
+<h3 id="promote-the-single-super-admin">Promote the (single) Super Admin</h3>
+
+<p>The person must already be an <strong>active admin</strong>. Run the rake task in production (the app
+deploys with <strong>Kamal</strong>):</p>
+
+<pre><code class="bash">kamal app exec &#39;bin/rails &quot;rbac:promote_super_admin[someone@kasagadi.com]&quot;&#39;
+</code></pre>
+
+<p>It clears the flag on everyone else and sets it on the target (the DB index guarantees one).
+To bootstrap the very first admin when none exists, open a console
+(<code>kamal app exec -i &#39;bin/rails console&#39;</code>) and create the <code>Admin</code> record before promoting.</p>
+
+<blockquote>
+<p><strong>Never run <code>db:seed</code> in production</strong> — the seed wipes claims (<code>Claim.destroy_all</code>). Use the
+rake task or console to set the super admin.</p>
+</blockquote>
+
+<h3 id="suspend-reactivate-an-account">Suspend / reactivate an account</h3>
+
+<p>As the Super Admin, open the admin&#39;s page (<code>/super_admins/admins/:id</code>) or a fact checker&#39;s
+page (<code>/admins/fact_checkers/:id</code>) and use <strong>Suspend account</strong> / <strong>Reactivate</strong>. Suspension
+signs the user out everywhere immediately and is recorded in the audit log.</p>
+
+<h3 id="transfer-a-claim">Transfer a claim</h3>
+
+<p>As the <strong>owner</strong> admin, open the claim and use <strong>Transfer ownership</strong> to hand it to another
+active admin. The receiving admin then sees it in their &quot;Awaiting approval&quot; / owned views.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="12-email-background-jobs"><span class="h2-num">12</span> Email &amp; background jobs</h2>
+
+
+<ul>
+<li><strong>Mailers</strong>: <code>ClaimMailer</code> (assigned, published), <code>InvitationMailer</code>, <code>PasswordsMailer</code>.</li>
+<li>All dispatches use <code>deliver_later</code>, queued through Solid Queue (database-backed Active Job;
+runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
+<li>Triggers:
+
+<ul>
+<li><code>ClaimMailer.assigned</code> — <code>Assignment</code> <code>after_create_commit</code> and on fact-checker change.</li>
+<li><code>ClaimMailer.published</code> — Claim <code>approve</code> event <code>after_commit</code>.</li>
+<li><code>InvitationMailer</code> — explicit dispatch in the invitations controller.</li>
+<li><code>PasswordsMailer.reset</code> — <code>PasswordsController#create</code> and the Super Admin reset action
+(both skip suspended users).</li>
+</ul></li>
+</ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="13-storage"><span class="h2-num">13</span> Storage</h2>
+
+
+<p>Active Storage is configured for two services:</p>
+
+<ul>
+<li><strong>local</strong> — disk-based, development.</li>
+<li><strong>cloudflare</strong> — Cloudflare R2 (S3-compatible) via <code>aws-sdk-s3</code>. R2 quirks handled in
+<code>config/storage.yml</code> (<code>force_path_style: true</code>, checksum options <code>when_required</code>).</li>
+</ul>
+
+<p>Cover images are auto-promoted from the first attached image among the evidence files
+(<code>Claim#promote_cover_image_from_evidence</code>). The shared attachment partials render images and
+<code>mp4/webm/ogg</code> videos inline (with a download overlay) and other types as file cards.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="14-frontend"><span class="h2-num">14</span> Frontend</h2>
+
+
+<ul>
+<li><strong>Tailwind CSS 4</strong> with a Ghana-inspired palette (charcoal primary, gold accent, green
+success, red danger).</li>
+<li><strong>Stimulus</strong> for interactivity (accordions, file-upload previews, verdict picker,
+multi-step claim form, mobile menu, auto-submit filters).</li>
+<li><strong>Material Symbols</strong> outline icons; <strong>Plus Jakarta Sans</strong> display font (no serifs).</li>
+</ul>
+
+<p>Layout conventions:</p>
+
+<ul>
+<li>List pages and <strong>detail/show pages</strong> both use <code>max-w-7xl</code>; show pages use a full-bleed
+<code>border-b</code> hero with the breadcrumb inside (matching the fact-checker / member / claim
+show pages).</li>
+<li>Portal/detail section headers: left-aligned title, right-aligned meta; homepage sections
+centered.</li>
+<li>&quot;Back&quot; links: omitted on editorial pages (marketplace), included on portal detail pages.</li>
+<li>Destructive actions (suspend) are solid red; restorative actions (reactivate) solid green.</li>
+</ul>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="15-codebase-tour"><span class="h2-num">15</span> Codebase tour</h2>
+
+
 <pre><code>app/
 ├── controllers/
 │   ├── admins/                ← admin portal (claims, invitations, members,
-│   │                            fact_checkers, dashboard)
+│   │                            fact_checkers, posts, dashboard)
+│   ├── super_admins/          ← super-admin area (admins, audit_logs)
 │   ├── fact_checkers/         ← fact-checker portal (dashboard, assignments)
 │   ├── members/               ← member portal (dashboard, claims)
 │   ├── concerns/
-│   │   └── authentication.rb  ← session-based auth concern
-│   ├── marketplace_controller.rb
-│   ├── invitation_acceptances_controller.rb
-│   ├── registrations_controller.rb
-│   ├── sessions_controller.rb
-│   ├── passwords_controller.rb
-│   └── pages_controller.rb    ← landing page
+│   │   ├── authentication.rb  ← session auth + suspension guard
+│   │   └── super_admin_guard.rb ← ensure_super_admin
+│   ├── marketplace_controller.rb / invitation_acceptances_controller.rb
+│   ├── registrations_controller.rb / sessions_controller.rb
+│   └── passwords_controller.rb / pages_controller.rb
+├── channels/application_cable/ ← suspension-aware Action Cable connection
 ├── models/
-│   ├── user.rb / admin.rb / member.rb / fact_checker.rb
-│   ├── claim.rb               ← AASM state machine lives here
-│   ├── assignment.rb          ← assigned-mail callbacks
-│   ├── verification.rb
-│   ├── evidence.rb
-│   ├── invitation.rb
-│   ├── session.rb
-│   └── current.rb             ← thread-local current session
-├── policies/                  ← Pundit (light usage today)
-├── mailers/                   ← claim, invitation, password mailers
-├── views/
-│   ├── admins/ / fact_checkers/ / members/ / marketplace/
-│   ├── shared/                ← attachment partials, flash, etc.
-│   └── layouts/               ← application + auth layouts
-├── javascript/controllers/    ← Stimulus controllers
-└── assets/tailwind/           ← Tailwind + custom design tokens
-
+│   ├── user.rb (status, suspend!/activate!, super_admin?)
+│   ├── admin.rb (super_admin, owned_claims) / member.rb / fact_checker.rb (active scope)
+│   ├── claim.rb (AASM, owner_admin, publishable_by?, transfer_to!, stamp_published_at)
+│   ├── assignment.rb / verification.rb / evidence.rb / invitation.rb
+│   ├── audit_log.rb (immutable event log)
+│   └── session.rb / current.rb
+├── services/admins/dashboard_chart_builder.rb ← analytics
+├── helpers/ (claim_actions, audit_logs, navigation, …)
+├── mailers/ / views/ / javascript/controllers/ / assets/tailwind/
 config/
-├── routes.rb
-├── storage.yml                ← local + Cloudflare R2 services
-└── credentials/               ← encrypted Rails credentials
-
-test/
-├── controllers/ models/ integration/ helpers/ mailers/
-└── fixtures/                  ← seeded user, member, admin, fact_checker,
-                                 claim, assignment, verification, invitation</code></pre>
+├── routes.rb / storage.yml / deploy.yml (Kamal) / importmap.rb
+lib/tasks/rbac.rake             ← rbac:promote_super_admin
+test/                            ← controllers, models, services, helpers, fixtures
+</code></pre>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="11-running-locally"><span class="h2-num">11</span> Running locally</h2>
-        <p>Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.</p>
-<pre><code>bin/setup            # bundle install, db:prepare
-bin/dev              # boots web + tailwind watch + (optionally) Solid Queue</code></pre>
-        <p>Sign in with the seeded admin account (see <code>db/seeds.rb</code>) or register as a fresh member at <code>/registration/new</code>.</p>
+        <h2 id="16-running-locally"><span class="h2-num">16</span> Running locally</h2>
+
+
+<p>Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.</p>
+
+<pre><code class="bash">bin/setup            # bundle install, db:prepare
+bin/dev              # boots web + tailwind watch + Solid Queue
+</code></pre>
+
+<p>Sign in with the seeded accounts (see <code>db/seeds.rb</code> — <code>admin@kasagandi.com</code> is seeded as the
+super admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="12-testing"><span class="h2-num">12</span> Testing</h2>
-<pre><code>bin/rails test                 # full suite (~190 tests, runs in &lt;5s)
+        <h2 id="17-testing"><span class="h2-num">17</span> Testing</h2>
+
+
+<pre><code class="bash">bin/rails test                 # full suite (~470 tests)
 bin/rubocop                    # style
 bin/brakeman                   # security scan
-bin/importmap audit            # JS dep audit</code></pre>
-        <p>CI runs all four jobs on every push to <code>main</code> and on pull requests (<code>.github/workflows/ci.yml</code>).</p>
-        <p>Conventions:</p>
-        <ul>
-          <li>Controller tests live under <code>test/controllers/&lt;namespace&gt;/</code>. Sign-in helper is defined in <code>test/test_helper.rb</code> (<code>sign_in(user)</code>).</li>
-          <li>Fixtures are kept minimal but cover all roles and one of each lifecycle state (<code>pending_claim</code>, <code>under_review_claim</code>, <code>verified_claim</code>).</li>
-          <li>No system/browser tests yet — <code>test/system/</code> is empty.</li>
-        </ul>
+bin/importmap audit            # JS dep audit
+</code></pre>
+
+<p>CI runs all four jobs on every push to <code>main</code> and on pull requests.</p>
+
+<p>Conventions:</p>
+
+<ul>
+<li>Controller tests under <code>test/controllers/&lt;namespace&gt;/</code>; sign-in helper in
+<code>test/test_helper.rb</code> (<code>sign_in(user)</code>).</li>
+<li>Fixtures cover all roles and lifecycle states (<code>pending_claim</code>, <code>under_review_claim</code>,
+<code>verified_claim</code>, <code>awaiting_approval_claim</code>) plus a second admin for ownership/transfer
+tests.</li>
+</ul>
       </section>
 
       <hr class="divider">
 
       <section>
-        <h2 id="13-glossary"><span class="h2-num">13</span> Glossary</h2>
-        <ul>
-          <li><strong>Claim</strong> — a public statement someone wants verified. The unit of work.</li>
-          <li><strong>Evidence</strong> — supporting material the member supplies with their claim (description + files).</li>
-          <li><strong>Assignment</strong> — the relationship between a claim and a fact checker, with due date and notes.</li>
-          <li><strong>Verification</strong> — the fact checker's verdict and research write-up.</li>
-          <li><strong>Verdict</strong> — one of <code>True</code>, <code>False</code>, <code>Misleading</code>, <code>Partly True</code>, <code>Unverifiable</code>.</li>
-          <li><strong>Marketplace</strong> — the public-facing catalogue of published, non-archived claims.</li>
-          <li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon next to their name.</li>
-        </ul>
-      </section>
+        <h2 id="18-glossary"><span class="h2-num">18</span> Glossary</h2>
 
+
+<ul>
+<li><strong>Claim</strong> — a public statement someone wants verified. The unit of work.</li>
+<li><strong>Owner admin</strong> — the single admin accountable for a claim; the only one who can publish,
+unpublish, republish, or transfer it. Set when they assign a fact checker.</li>
+<li><strong>Transfer</strong> — moving claim ownership from one admin to another (audited).</li>
+<li><strong>Evidence</strong> — supporting material the member supplies (description + files).</li>
+<li><strong>Assignment</strong> — the relationship between a claim and a fact checker (due date, notes,
+status).</li>
+<li><strong>Verification</strong> — the fact checker&#39;s verdict and research write-up.</li>
+<li><strong>Verdict</strong> — one of True, False, Misleading, Partly True, Unverifiable.</li>
+<li><strong>Audit log</strong> — immutable record of who did what; the platform&#39;s accountability trail.</li>
+<li><strong>Suspension</strong> — an account state that blocks all access (login, sessions, reset, realtime).</li>
+<li><strong>Super Admin</strong> — the single platform owner; oversees admins, fact-checker accounts, global
+claim visibility, the audit log, and analytics.</li>
+<li><strong>Marketplace</strong> — the public catalogue of published claims.</li>
+<li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon.
+</content></li>
+</ul>
+      </section>
     </article>
 
   </div>
 
-  <footer>
+<footer>
     <p><strong>Kasagadi AI</strong> · System manual · Source in <code>docs/MANUAL.md</code></p>
   </footer>
 
