@@ -322,18 +322,19 @@
         <li><a href="#4-claim-ownership-accountability"><span class="toc-num">04</span> Claim ownership &amp; accountability</a></li>
         <li><a href="#5-the-supporting-records"><span class="toc-num">05</span> The supporting records</a></li>
         <li><a href="#6-walkthroughs-by-role"><span class="toc-num">06</span> Walkthroughs by role</a></li>
-        <li><a href="#7-account-suspension"><span class="toc-num">07</span> Account suspension</a></li>
-        <li><a href="#8-the-audit-log"><span class="toc-num">08</span> The audit log</a></li>
-        <li><a href="#9-authentication-authorization"><span class="toc-num">09</span> Authentication &amp; authorization</a></li>
-        <li><a href="#10-dashboards-analytics"><span class="toc-num">10</span> Dashboards &amp; analytics</a></li>
-        <li><a href="#11-operating-the-platform"><span class="toc-num">11</span> Operating the platform</a></li>
-        <li><a href="#12-email-background-jobs"><span class="toc-num">12</span> Email &amp; background jobs</a></li>
-        <li><a href="#13-storage"><span class="toc-num">13</span> Storage</a></li>
-        <li><a href="#14-frontend"><span class="toc-num">14</span> Frontend</a></li>
-        <li><a href="#15-codebase-tour"><span class="toc-num">15</span> Codebase tour</a></li>
-        <li><a href="#16-running-locally"><span class="toc-num">16</span> Running locally</a></li>
-        <li><a href="#17-testing"><span class="toc-num">17</span> Testing</a></li>
-        <li><a href="#18-glossary"><span class="toc-num">18</span> Glossary</a></li>
+        <li><a href="#7-ai-chat-assistant"><span class="toc-num">07</span> AI chat assistant</a></li>
+        <li><a href="#8-account-suspension"><span class="toc-num">08</span> Account suspension</a></li>
+        <li><a href="#9-the-audit-log"><span class="toc-num">09</span> The audit log</a></li>
+        <li><a href="#10-authentication-authorization"><span class="toc-num">10</span> Authentication &amp; authorization</a></li>
+        <li><a href="#11-dashboards-analytics"><span class="toc-num">11</span> Dashboards &amp; analytics</a></li>
+        <li><a href="#12-operating-the-platform"><span class="toc-num">12</span> Operating the platform</a></li>
+        <li><a href="#13-email-background-jobs"><span class="toc-num">13</span> Email &amp; background jobs</a></li>
+        <li><a href="#14-storage"><span class="toc-num">14</span> Storage</a></li>
+        <li><a href="#15-frontend"><span class="toc-num">15</span> Frontend</a></li>
+        <li><a href="#16-codebase-tour"><span class="toc-num">16</span> Codebase tour</a></li>
+        <li><a href="#17-running-locally"><span class="toc-num">17</span> Running locally</a></li>
+        <li><a href="#18-testing"><span class="toc-num">18</span> Testing</a></li>
+        <li><a href="#19-glossary"><span class="toc-num">19</span> Glossary</a></li>
       </ol>
     </aside>
 
@@ -715,7 +716,78 @@ bottom.</li>
       <hr class="divider">
 
       <section>
-        <h2 id="7-account-suspension"><span class="h2-num">07</span> Account suspension</h2>
+        <h2 id="7-ai-chat-assistant"><span class="h2-num">07</span> AI chat assistant</h2>
+
+
+<p>Kasagadi runs a floating <strong>AI chat assistant</strong> (the widget in the corner) across the
+public site and the member / fact-checker / admin portals. Anyone can ask the
+fact-checking AI a question and get a streamed, sourced answer.</p>
+
+<ul>
+<li><strong>Who can use it:</strong> everyone — signed-in users <em>and</em> anonymous visitors. A signed-in
+user gets a <code>Conversation</code> owned by their account; an anonymous visitor gets one keyed
+by a per-browser token in the session cookie (<code>session[:chatbot_token]</code>). A conversation
+must have a user or a token, never neither.</li>
+<li><strong>Records:</strong> a <code>Conversation</code> has many <code>Message</code>s; each has a <code>role</code> (<code>user</code> /
+<code>assistant</code>), <code>content</code>, and (for assistant turns) a <code>sources</code> JSON list. The last ~20
+turns are sent upstream as history.</li>
+<li><strong>Backend:</strong> <code>Chatbot::MessagesController</code> (under <code>/chatbot</code>), open to unauthenticated
+access.</li>
+</ul>
+
+<p>Two endpoints — this is the closest thing the app has to a programmatic <strong>API</strong>:</p>
+
+<table><thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Returns</th>
+<th>Use</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>/chatbot/messages</code></td>
+<td>POST</td>
+<td>JSON <code>{ response, html }</code></td>
+<td>One-shot, non-streaming reply (scripts / tests).</td>
+</tr>
+<tr>
+<td><code>/chatbot/messages/stream</code></td>
+<td>POST</td>
+<td>Turbo Stream</td>
+<td>Live, token-by-token reply in the widget (default path).</td>
+</tr>
+</tbody></table>
+
+<p><strong>How the streaming works</strong> (the interesting part):</p>
+
+<ol>
+<li><code>#stream</code> appends an empty assistant bubble to the widget via Turbo Stream and enqueues
+<code>ChatReplyJob</code>. The bubble&#39;s DOM id doubles as its Action Cable stream name, so they&#39;re
+created together and can&#39;t desync.</li>
+<li><code>ChatReplyJob</code> calls <code>FactCheckAi.client.chat_stream</code> (the external fact-check service)
+and, as tokens arrive, <strong>coalesces</strong> them into ~7 fps updates
+(<code>CHUNK_FLUSH_INTERVAL = 0.15s</code>) broadcast over Action Cable
+(<code>Turbo::StreamsChannel.broadcast_update_to</code>).</li>
+<li>On <code>done</code> it persists the user + assistant messages atomically and swaps the bubble for
+the final styled card (rendered Markdown + sources). On error it replaces the bubble with
+a danger notice carrying a <strong>retry</strong> button — the original message is embedded, so a click
+re-sends with no client-side state.</li>
+</ol>
+
+<p><strong>External dependency:</strong> answers come from the <strong>FactCheckAI</strong> service — a thin Ruby client
+(<code>lib/fact_check_ai/</code>) over a configurable REST API (<code>FACTCHECK_AI_API_URL</code>). The same client
+powers claim analysis (<code>analyse</code> / <code>analyse_stream</code>). If the upstream is down, the user sees
+&quot;Sorry, the fact-checking service is temporarily unavailable.&quot; with a retry.</p>
+
+<p><strong>Realtime + suspension:</strong> <code>ApplicationCable::Connection</code> allows anonymous connections (so
+visitors can chat) and refuses suspended users — see &quot;Account suspension&quot;.</p>
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="8-account-suspension"><span class="h2-num">08</span> Account suspension</h2>
 
 
 <p>Any account can be set <code>active</code> or <code>suspended</code> (<code>users.status</code>). Suspension is a hard block
@@ -743,7 +815,7 @@ account.</p>
       <hr class="divider">
 
       <section>
-        <h2 id="8-the-audit-log"><span class="h2-num">08</span> The audit log</h2>
+        <h2 id="9-the-audit-log"><span class="h2-num">09</span> The audit log</h2>
 
 
 <p>Every consequential action writes an immutable <code>AuditLog</code> row: <code>actor</code> (the User who did
@@ -804,7 +876,7 @@ completed Claim #100&quot;, &quot;Admin A transferred Claim #101 to Admin C&quot
       <hr class="divider">
 
       <section>
-        <h2 id="9-authentication-authorization"><span class="h2-num">09</span> Authentication &amp; authorization</h2>
+        <h2 id="10-authentication-authorization"><span class="h2-num">10</span> Authentication &amp; authorization</h2>
 
 
 <ul>
@@ -830,7 +902,7 @@ The request always returns the same generic notice to avoid leaking account exis
       <hr class="divider">
 
       <section>
-        <h2 id="10-dashboards-analytics"><span class="h2-num">10</span> Dashboards &amp; analytics</h2>
+        <h2 id="11-dashboards-analytics"><span class="h2-num">11</span> Dashboards &amp; analytics</h2>
 
 
 <p>The admin dashboard renders lazy-loaded chart frames built by
@@ -858,7 +930,7 @@ progress) on each admin&#39;s page, and <strong>system activity</strong> via the
       <hr class="divider">
 
       <section>
-        <h2 id="11-operating-the-platform"><span class="h2-num">11</span> Operating the platform</h2>
+        <h2 id="12-operating-the-platform"><span class="h2-num">12</span> Operating the platform</h2>
 
 
 <p>Day-two operations, mostly for the Super Admin / ops.</p>
@@ -895,7 +967,7 @@ active admin. The receiving admin then sees it in their &quot;Awaiting approval&
       <hr class="divider">
 
       <section>
-        <h2 id="12-email-background-jobs"><span class="h2-num">12</span> Email &amp; background jobs</h2>
+        <h2 id="13-email-background-jobs"><span class="h2-num">13</span> Email &amp; background jobs</h2>
 
 
 <ul>
@@ -917,7 +989,7 @@ runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
       <hr class="divider">
 
       <section>
-        <h2 id="13-storage"><span class="h2-num">13</span> Storage</h2>
+        <h2 id="14-storage"><span class="h2-num">14</span> Storage</h2>
 
 
 <p>Active Storage is configured for two services:</p>
@@ -936,7 +1008,7 @@ runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
       <hr class="divider">
 
       <section>
-        <h2 id="14-frontend"><span class="h2-num">14</span> Frontend</h2>
+        <h2 id="15-frontend"><span class="h2-num">15</span> Frontend</h2>
 
 
 <ul>
@@ -963,7 +1035,7 @@ centered.</li>
       <hr class="divider">
 
       <section>
-        <h2 id="15-codebase-tour"><span class="h2-num">15</span> Codebase tour</h2>
+        <h2 id="16-codebase-tour"><span class="h2-num">16</span> Codebase tour</h2>
 
 
 <pre><code>app/
@@ -1000,7 +1072,7 @@ test/                            ← controllers, models, services, helpers, fix
       <hr class="divider">
 
       <section>
-        <h2 id="16-running-locally"><span class="h2-num">16</span> Running locally</h2>
+        <h2 id="17-running-locally"><span class="h2-num">17</span> Running locally</h2>
 
 
 <p>Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.</p>
@@ -1016,7 +1088,7 @@ super admin in dev) or register a fresh member at <code>/registration/new</code>
       <hr class="divider">
 
       <section>
-        <h2 id="17-testing"><span class="h2-num">17</span> Testing</h2>
+        <h2 id="18-testing"><span class="h2-num">18</span> Testing</h2>
 
 
 <pre><code class="bash">bin/rails test                 # full suite (~470 tests)
@@ -1041,7 +1113,7 @@ tests.</li>
       <hr class="divider">
 
       <section>
-        <h2 id="18-glossary"><span class="h2-num">18</span> Glossary</h2>
+        <h2 id="19-glossary"><span class="h2-num">19</span> Glossary</h2>
 
 
 <ul>

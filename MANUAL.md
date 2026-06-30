@@ -7,7 +7,7 @@ designer wanting to know which states each screen represents.
 
 ---
 
-## 1. What the platform does
+## What the platform does
 
 Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit
 claims they want investigated. Admins triage those claims and assign them to accredited
@@ -23,7 +23,7 @@ system — every consequential action is attributed to a person and recorded.
 
 ---
 
-## 2. The actors
+## The actors
 
 A `User` record holds the credentials and shared profile (name, email, avatar). A user
 becomes a role by being associated with a `Member`, `FactChecker`, or `Admin` profile
@@ -63,7 +63,7 @@ Public visitors (no account) can browse the marketplace and read published claim
 
 ---
 
-## 3. The lifecycle of a claim
+## The lifecycle of a claim
 
 A claim moves through five states, governed by the AASM state machine on the `Claim`
 model. The transitions and who triggers them:
@@ -118,7 +118,7 @@ Verification rows. These power the UI badges:
 
 ---
 
-## 4. Claim ownership & accountability
+## Claim ownership & accountability
 
 Ownership is the backbone of the accountability model.
 
@@ -140,7 +140,7 @@ fact checker, and the assigned / completed / published dates.
 
 ---
 
-## 5. The supporting records
+## The supporting records
 
 - **Evidence** — many per claim. Description plus optional file attachments (images, videos,
   PDFs via Active Storage). Members add evidence when submitting.
@@ -156,7 +156,7 @@ fact checker, and the assigned / completed / published dates.
 
 ---
 
-## 6. Walkthroughs by role
+## Walkthroughs by role
 
 ### 6.1 Member
 
@@ -237,7 +237,52 @@ Provisioning the Super Admin is an operations task — see §11.
 
 ---
 
-## 7. Account suspension
+## AI chat assistant
+
+Kasagadi runs a floating **AI chat assistant** (the widget in the corner) across the
+public site and the member / fact-checker / admin portals. Anyone can ask the
+fact-checking AI a question and get a streamed, sourced answer.
+
+- **Who can use it:** everyone — signed-in users *and* anonymous visitors. A signed-in
+  user gets a `Conversation` owned by their account; an anonymous visitor gets one keyed
+  by a per-browser token in the session cookie (`session[:chatbot_token]`). A conversation
+  must have a user or a token, never neither.
+- **Records:** a `Conversation` has many `Message`s; each has a `role` (`user` /
+  `assistant`), `content`, and (for assistant turns) a `sources` JSON list. The last ~20
+  turns are sent upstream as history.
+- **Backend:** `Chatbot::MessagesController` (under `/chatbot`), open to unauthenticated
+  access.
+
+Two endpoints — this is the closest thing the app has to a programmatic **API**:
+
+| Endpoint | Method | Returns | Use |
+|---|---|---|---|
+| `/chatbot/messages` | POST | JSON `{ response, html }` | One-shot, non-streaming reply (scripts / tests). |
+| `/chatbot/messages/stream` | POST | Turbo Stream | Live, token-by-token reply in the widget (default path). |
+
+**How the streaming works** (the interesting part):
+
+1. `#stream` appends an empty assistant bubble to the widget via Turbo Stream and enqueues
+   `ChatReplyJob`. The bubble's DOM id doubles as its Action Cable stream name, so they're
+   created together and can't desync.
+2. `ChatReplyJob` calls `FactCheckAi.client.chat_stream` (the external fact-check service)
+   and, as tokens arrive, **coalesces** them into ~7 fps updates
+   (`CHUNK_FLUSH_INTERVAL = 0.15s`) broadcast over Action Cable
+   (`Turbo::StreamsChannel.broadcast_update_to`).
+3. On `done` it persists the user + assistant messages atomically and swaps the bubble for
+   the final styled card (rendered Markdown + sources). On error it replaces the bubble with
+   a danger notice carrying a **retry** button — the original message is embedded, so a click
+   re-sends with no client-side state.
+
+**External dependency:** answers come from the **FactCheckAI** service — a thin Ruby client
+(`lib/fact_check_ai/`) over a configurable REST API (`FACTCHECK_AI_API_URL`). The same client
+powers claim analysis (`analyse` / `analyse_stream`). If the upstream is down, the user sees
+"Sorry, the fact-checking service is temporarily unavailable." with a retry.
+
+**Realtime + suspension:** `ApplicationCable::Connection` allows anonymous connections (so
+visitors can chat) and refuses suspended users — see "Account suspension".
+
+## Account suspension
 
 Any account can be set `active` or `suspended` (`users.status`). Suspension is a hard block
 on access, enforced in depth:
@@ -260,7 +305,7 @@ account.
 
 ---
 
-## 8. The audit log
+## The audit log
 
 Every consequential action writes an immutable `AuditLog` row: `actor` (the User who did
 it), `action`, a polymorphic `auditable` (usually a Claim or User), `metadata` (JSONB), and
@@ -286,7 +331,7 @@ completed Claim #100", "Admin A transferred Claim #101 to Admin C".
 
 ---
 
-## 9. Authentication & authorization
+## Authentication & authorization
 
 - **Sessions** — cookie-based; a signed cookie holds a `Session.id` stored in the DB, so
   sessions can be terminated server-side. Every request is gated by
@@ -307,7 +352,7 @@ completed Claim #100", "Admin A transferred Claim #101 to Admin C".
 
 ---
 
-## 10. Dashboards & analytics
+## Dashboards & analytics
 
 The admin dashboard renders lazy-loaded chart frames built by
 `Admins::DashboardChartBuilder`. What each one **counts**:
@@ -330,7 +375,7 @@ progress) on each admin's page, and **system activity** via the audit log.
 
 ---
 
-## 11. Operating the platform
+## Operating the platform
 
 Day-two operations, mostly for the Super Admin / ops.
 
@@ -363,7 +408,7 @@ active admin. The receiving admin then sees it in their "Awaiting approval" / ow
 
 ---
 
-## 12. Email & background jobs
+## Email & background jobs
 
 - **Mailers**: `ClaimMailer` (assigned, published), `InvitationMailer`, `PasswordsMailer`.
 - All dispatches use `deliver_later`, queued through Solid Queue (database-backed Active Job;
@@ -377,7 +422,7 @@ active admin. The receiving admin then sees it in their "Awaiting approval" / ow
 
 ---
 
-## 13. Storage
+## Storage
 
 Active Storage is configured for two services:
 
@@ -391,7 +436,7 @@ Cover images are auto-promoted from the first attached image among the evidence 
 
 ---
 
-## 14. Frontend
+## Frontend
 
 - **Tailwind CSS 4** with a Ghana-inspired palette (charcoal primary, gold accent, green
   success, red danger).
@@ -411,7 +456,7 @@ Layout conventions:
 
 ---
 
-## 15. Codebase tour
+## Codebase tour
 
 ```
 app/
@@ -446,7 +491,7 @@ test/                            ← controllers, models, services, helpers, fix
 
 ---
 
-## 16. Running locally
+## Running locally
 
 Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.
 
@@ -460,7 +505,7 @@ super admin in dev) or register a fresh member at `/registration/new`.
 
 ---
 
-## 17. Testing
+## Testing
 
 ```bash
 bin/rails test                 # full suite (~470 tests)
@@ -481,7 +526,7 @@ Conventions:
 
 ---
 
-## 18. Glossary
+## Glossary
 
 - **Claim** — a public statement someone wants verified. The unit of work.
 - **Owner admin** — the single admin accountable for a claim; the only one who can publish,
