@@ -586,8 +586,9 @@ Each claim carries `title`, `content`, `source`, `topics[]`, `regions[]`, `langu
 Submitter (member) personal data is never exposed.
 
 **Security posture:** published-only scoping · keys stored as SHA-256 digests and revocable ·
-Bearer over HTTPS · per-key rate limiting (~300 req/min → `429`) · no CORS (server-to-server) ·
-an explicit field allowlist (no PII, no internal columns).
+Bearer over HTTPS · per-key rate limiting (~300 req/min → `429`) · server-to-server by default
+(cross-origin browser access is allowed only from the docs Swagger UI) · an explicit field
+allowlist (no PII, no internal columns).
 
 **Issuing keys (ops):** keys are managed from the console for now —
 `bin/rails "api_key:issue[Partner Name]"` prints the key **once** (store it immediately),

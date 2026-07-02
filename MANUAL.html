@@ -314,8 +314,8 @@
   <div class="layout">
 
         <aside class="toc" aria-label="Table of contents">
-    <div class="toc-label">Contents</div>
-    <ol>
+      <div class="toc-label">Contents</div>
+      <ol>
         <li><a href="#1-what-the-platform-does"><span class="toc-num">01</span> What the platform does</a></li>
         <li><a href="#2-the-actors"><span class="toc-num">02</span> The actors</a></li>
         <li><a href="#3-the-lifecycle-of-a-claim"><span class="toc-num">03</span> The lifecycle of a claim</a></li>
@@ -336,8 +336,8 @@
         <li><a href="#18-testing"><span class="toc-num">18</span> Testing</a></li>
         <li><a href="#19-glossary"><span class="toc-num">19</span> Glossary</a></li>
         <li><a href="#20-public-claims-api"><span class="toc-num">20</span> Public claims API</a></li>
-    </ol>
-  </aside>
+      </ol>
+    </aside>
 
     <article>
       <p>A working reference for how the Kasagadi AI fact-checking platform is built and how it
@@ -347,6 +347,7 @@ designer wanting to know which states each screen represents.</p>
 
       <section>
         <h2 id="1-what-the-platform-does"><span class="h2-num">01</span> What the platform does</h2>
+
 
 <p>Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit
 claims they want investigated. Admins triage those claims and assign them to accredited
@@ -359,13 +360,13 @@ visibility, the audit trail, and platform analytics.</p>
 <p>The platform is built so that the journey from &quot;I saw a suspicious headline&quot; to &quot;here is a
 verified verdict with evidence and a research trail&quot; lives in one <strong>auditable, accountable</strong>
 system — every consequential action is attributed to a person and recorded.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="2-the-actors"><span class="h2-num">02</span> The actors</h2>
+
 
 <p>A <code>User</code> record holds the credentials and shared profile (name, email, avatar). A user
 becomes a role by being associated with a <code>Member</code>, <code>FactChecker</code>, or <code>Admin</code> profile
@@ -500,13 +501,13 @@ that admin can publish, unpublish, republish, or transfer it. The Super Admin ha
 <em>visibility</em> but does <strong>not</strong> override ownership — their oversight role grants no publish
 power over claims they don&#39;t own.</p>
 </blockquote>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="3-the-lifecycle-of-a-claim"><span class="h2-num">03</span> The lifecycle of a claim</h2>
+
 
 <p>A claim moves through five states, governed by the AASM state machine on the <code>Claim</code>
 model. The transitions and who triggers them:</p>
@@ -563,13 +564,13 @@ Verification rows. These power the UI badges:</p>
 admin to approve)</li>
 <li><code>owned_by?(admin)</code> / <code>publishable_by?(admin)</code> — true only for the claim&#39;s owner admin</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="4-claim-ownership-accountability"><span class="h2-num">04</span> Claim ownership &amp; accountability</h2>
+
 
 <p>Ownership is the backbone of the accountability model.</p>
 
@@ -590,13 +591,13 @@ with a &quot;View all&quot; link to the owner-scoped claims view.</li>
 
 <p>The Super Admin&#39;s claims view shows <strong>every</strong> claim (including drafts) read-only, with owner,
 fact checker, and the assigned / completed / published dates.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="5-the-supporting-records"><span class="h2-num">05</span> The supporting records</h2>
+
 
 <ul>
 <li><strong>Evidence</strong> — many per claim. Description plus optional file attachments (images, videos,
@@ -611,13 +612,13 @@ and <code>published_at</code> (stamped when the owner admin approves — <em>not
 who did it (<code>actor</code>), what (<code>action</code>), to which record (polymorphic <code>auditable</code>), and
 metadata. See §8.</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="6-walkthroughs-by-role"><span class="h2-num">06</span> Walkthroughs by role</h2>
+
 
 <h3>6.1 Member</h3>
 
@@ -711,13 +712,13 @@ regions, search.</li>
 attribution, and <strong>published date + publishing admin</strong>. Related claims by topic at the
 bottom.</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="7-ai-chat-assistant"><span class="h2-num">07</span> AI chat assistant</h2>
+
 
 <p>Kasagadi runs a floating <strong>AI chat assistant</strong> (the widget in the corner) across the
 public site and the member / fact-checker / admin portals. Anyone can ask the
@@ -782,13 +783,13 @@ powers claim analysis (<code>analyse</code> / <code>analyse_stream</code>). If t
 
 <p><strong>Realtime + suspension:</strong> <code>ApplicationCable::Connection</code> allows anonymous connections (so
 visitors can chat) and refuses suspended users — see &quot;Account suspension&quot;.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="8-account-suspension"><span class="h2-num">08</span> Account suspension</h2>
+
 
 <p>Any account can be set <code>active</code> or <code>suspended</code> (<code>users.status</code>). Suspension is a hard block
 on access, enforced in depth:</p>
@@ -810,13 +811,13 @@ receive transferred ownership.</li>
 <p>Who can suspend whom: the <strong>Super Admin</strong> suspends/reactivates admins and fact checkers. The
 controls live on each account&#39;s page (and the Admins list), never for the Super Admin&#39;s own
 account.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="9-the-audit-log"><span class="h2-num">09</span> The audit log</h2>
+
 
 <p>Every consequential action writes an immutable <code>AuditLog</code> row: <code>actor</code> (the User who did
 it), <code>action</code>, a polymorphic <code>auditable</code> (usually a Claim or User), <code>metadata</code> (JSONB), and
@@ -871,13 +872,13 @@ it), <code>action</code>, a polymorphic <code>auditable</code> (usually a Claim 
 <p>The Super Admin reads the feed at <code>/super_admins/audit_logs</code>, newest first, filterable by
 <strong>actor</strong> and <strong>date range</strong>. It reads like &quot;Admin A assigned Claim #100&quot;, &quot;Fact Checker B
 completed Claim #100&quot;, &quot;Admin A transferred Claim #101 to Admin C&quot;.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="10-authentication-authorization"><span class="h2-num">10</span> Authentication &amp; authorization</h2>
+
 
 <ul>
 <li><strong>Sessions</strong> — cookie-based; a signed cookie holds a <code>Session.id</code> stored in the DB, so
@@ -897,13 +898,13 @@ one.</li>
 token bound to the password salt, so changing the password invalidates outstanding tokens.
 The request always returns the same generic notice to avoid leaking account existence.</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="11-dashboards-analytics"><span class="h2-num">11</span> Dashboards &amp; analytics</h2>
+
 
 <p>The admin dashboard renders lazy-loaded chart frames built by
 <code>Admins::DashboardChartBuilder</code>. What each one <strong>counts</strong>:</p>
@@ -925,13 +926,13 @@ sparse data stays readable; the current period is highlighted.</li>
 
 <p>The Super Admin also gets <strong>per-admin performance</strong> (owned / published / awaiting / in
 progress) on each admin&#39;s page, and <strong>system activity</strong> via the audit log.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="12-operating-the-platform"><span class="h2-num">12</span> Operating the platform</h2>
+
 
 <p>Day-two operations, mostly for the Super Admin / ops.</p>
 
@@ -962,13 +963,13 @@ signs the user out everywhere immediately and is recorded in the audit log.</p>
 
 <p>As the <strong>owner</strong> admin, open the claim and use <strong>Transfer ownership</strong> to hand it to another
 active admin. The receiving admin then sees it in their &quot;Awaiting approval&quot; / owned views.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="13-email-background-jobs"><span class="h2-num">13</span> Email &amp; background jobs</h2>
+
 
 <ul>
 <li><strong>Mailers</strong>: <code>ClaimMailer</code> (assigned, published), <code>InvitationMailer</code>, <code>PasswordsMailer</code>.</li>
@@ -984,13 +985,13 @@ runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
 (both skip suspended users).</li>
 </ul></li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="14-storage"><span class="h2-num">14</span> Storage</h2>
+
 
 <p>Active Storage is configured for two services:</p>
 
@@ -1003,13 +1004,13 @@ runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
 <p>Cover images are auto-promoted from the first attached image among the evidence files
 (<code>Claim#promote_cover_image_from_evidence</code>). The shared attachment partials render images and
 <code>mp4/webm/ogg</code> videos inline (with a download overlay) and other types as file cards.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="15-frontend"><span class="h2-num">15</span> Frontend</h2>
+
 
 <ul>
 <li><strong>Tailwind CSS 4</strong> with a Ghana-inspired palette (charcoal primary, gold accent, green
@@ -1030,13 +1031,13 @@ centered.</li>
 <li>&quot;Back&quot; links: omitted on editorial pages (marketplace), included on portal detail pages.</li>
 <li>Destructive actions (suspend) are solid red; restorative actions (reactivate) solid green.</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="16-codebase-tour"><span class="h2-num">16</span> Codebase tour</h2>
+
 
 <pre><code>app/
 ├── controllers/
@@ -1067,13 +1068,13 @@ config/
 lib/tasks/rbac.rake             ← rbac:promote_super_admin
 test/                            ← controllers, models, services, helpers, fixtures
 </code></pre>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="17-running-locally"><span class="h2-num">17</span> Running locally</h2>
+
 
 <p>Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.</p>
 
@@ -1083,13 +1084,13 @@ bin/dev              # boots web + tailwind watch + Solid Queue
 
 <p>Sign in with the seeded accounts (see <code>db/seeds.rb</code> — <code>admin@kasagandi.com</code> is seeded as the
 super admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="18-testing"><span class="h2-num">18</span> Testing</h2>
+
 
 <pre><code class="bash">bin/rails test                 # full suite (~470 tests)
 bin/rubocop                    # style
@@ -1108,13 +1109,13 @@ bin/importmap audit            # JS dep audit
 <code>verified_claim</code>, <code>awaiting_approval_claim</code>) plus a second admin for ownership/transfer
 tests.</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="19-glossary"><span class="h2-num">19</span> Glossary</h2>
+
 
 <ul>
 <li><strong>Claim</strong> — a public statement someone wants verified. The unit of work.</li>
@@ -1133,13 +1134,13 @@ claim visibility, the audit log, and analytics.</li>
 <li><strong>Marketplace</strong> — the public catalogue of published claims.</li>
 <li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon.</li>
 </ul>
-
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="20-public-claims-api"><span class="h2-num">20</span> Public claims API</h2>
+
 
 <p>External partners can list Kasagadi&#39;s <strong>published, fact-checked claims</strong> from their own
 apps through a read-only JSON API. The full, interactive reference lives at
@@ -1194,14 +1195,14 @@ for incremental syncing), <code>page</code>, and <code>per_page</code> (capped a
 Submitter (member) personal data is never exposed.</p>
 
 <p><strong>Security posture:</strong> published-only scoping · keys stored as SHA-256 digests and revocable ·
-Bearer over HTTPS · per-key rate limiting (~300 req/min → <code>429</code>) · no CORS (server-to-server) ·
-an explicit field allowlist (no PII, no internal columns).</p>
+Bearer over HTTPS · per-key rate limiting (~300 req/min → <code>429</code>) · server-to-server by default
+(cross-origin browser access is allowed only from the docs Swagger UI) · an explicit field
+allowlist (no PII, no internal columns).</p>
 
 <p><strong>Issuing keys (ops):</strong> keys are managed from the console for now —
 <code>bin/rails &quot;api_key:issue[Partner Name]&quot;</code> prints the key <strong>once</strong> (store it immediately),
 <code>bin/rails api_key:list</code> shows all keys and usage, and <code>bin/rails &quot;api_key:revoke[ID]&quot;</code>
 disables one.</p>
-
       </section>
     </article>
 
