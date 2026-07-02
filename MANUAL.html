@@ -313,9 +313,9 @@
 
   <div class="layout">
 
-    <aside class="toc" aria-label="Table of contents">
-      <div class="toc-label">Contents</div>
-      <ol>
+        <aside class="toc" aria-label="Table of contents">
+    <div class="toc-label">Contents</div>
+    <ol>
         <li><a href="#1-what-the-platform-does"><span class="toc-num">01</span> What the platform does</a></li>
         <li><a href="#2-the-actors"><span class="toc-num">02</span> The actors</a></li>
         <li><a href="#3-the-lifecycle-of-a-claim"><span class="toc-num">03</span> The lifecycle of a claim</a></li>
@@ -335,8 +335,9 @@
         <li><a href="#17-running-locally"><span class="toc-num">17</span> Running locally</a></li>
         <li><a href="#18-testing"><span class="toc-num">18</span> Testing</a></li>
         <li><a href="#19-glossary"><span class="toc-num">19</span> Glossary</a></li>
-      </ol>
-    </aside>
+        <li><a href="#20-public-claims-api"><span class="toc-num">20</span> Public claims API</a></li>
+    </ol>
+  </aside>
 
     <article>
       <p>A working reference for how the Kasagadi AI fact-checking platform is built and how it
@@ -346,7 +347,6 @@ designer wanting to know which states each screen represents.</p>
 
       <section>
         <h2 id="1-what-the-platform-does"><span class="h2-num">01</span> What the platform does</h2>
-
 
 <p>Kasagadi AI is a Ghana-focused fact-checking marketplace. Members of the public submit
 claims they want investigated. Admins triage those claims and assign them to accredited
@@ -359,13 +359,13 @@ visibility, the audit trail, and platform analytics.</p>
 <p>The platform is built so that the journey from &quot;I saw a suspicious headline&quot; to &quot;here is a
 verified verdict with evidence and a research trail&quot; lives in one <strong>auditable, accountable</strong>
 system — every consequential action is attributed to a person and recorded.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="2-the-actors"><span class="h2-num">02</span> The actors</h2>
-
 
 <p>A <code>User</code> record holds the credentials and shared profile (name, email, avatar). A user
 becomes a role by being associated with a <code>Member</code>, <code>FactChecker</code>, or <code>Admin</code> profile
@@ -404,7 +404,7 @@ and authorization.</p>
 
 <p>Public visitors (no account) can browse the marketplace and read published claims.</p>
 
-<h3 id="capability-matrix">Capability matrix</h3>
+<h3>Capability matrix</h3>
 
 <table><thead>
 <tr>
@@ -500,13 +500,13 @@ that admin can publish, unpublish, republish, or transfer it. The Super Admin ha
 <em>visibility</em> but does <strong>not</strong> override ownership — their oversight role grants no publish
 power over claims they don&#39;t own.</p>
 </blockquote>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="3-the-lifecycle-of-a-claim"><span class="h2-num">03</span> The lifecycle of a claim</h2>
-
 
 <p>A claim moves through five states, governed by the AASM state machine on the <code>Claim</code>
 model. The transitions and who triggers them:</p>
@@ -551,7 +551,7 @@ claim is the <code>unpublished</code> <strong>state</strong> reached via the <co
 <code>republish</code>.</p>
 </blockquote>
 
-<h3 id="derived-helpers">Derived helpers</h3>
+<h3>Derived helpers</h3>
 
 <p>The Claim model exposes &quot;computed states&quot; that combine the AASM state with the Assignment /
 Verification rows. These power the UI badges:</p>
@@ -563,13 +563,13 @@ Verification rows. These power the UI badges:</p>
 admin to approve)</li>
 <li><code>owned_by?(admin)</code> / <code>publishable_by?(admin)</code> — true only for the claim&#39;s owner admin</li>
 </ul>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="4-claim-ownership-accountability"><span class="h2-num">04</span> Claim ownership &amp; accountability</h2>
-
 
 <p>Ownership is the backbone of the accountability model.</p>
 
@@ -590,13 +590,13 @@ with a &quot;View all&quot; link to the owner-scoped claims view.</li>
 
 <p>The Super Admin&#39;s claims view shows <strong>every</strong> claim (including drafts) read-only, with owner,
 fact checker, and the assigned / completed / published dates.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="5-the-supporting-records"><span class="h2-num">05</span> The supporting records</h2>
-
 
 <ul>
 <li><strong>Evidence</strong> — many per claim. Description plus optional file attachments (images, videos,
@@ -611,6 +611,7 @@ and <code>published_at</code> (stamped when the owner admin approves — <em>not
 who did it (<code>actor</code>), what (<code>action</code>), to which record (polymorphic <code>auditable</code>), and
 metadata. See §8.</li>
 </ul>
+
       </section>
 
       <hr class="divider">
@@ -618,8 +619,7 @@ metadata. See §8.</li>
       <section>
         <h2 id="6-walkthroughs-by-role"><span class="h2-num">06</span> Walkthroughs by role</h2>
 
-
-<h3 id="61-member">6.1 Member</h3>
+<h3>6.1 Member</h3>
 
 <ol>
 <li>Signs up at <code>/registration/new</code> → a <code>User</code> + <code>Member</code> are created, signed in, landed on
@@ -633,7 +633,7 @@ keeps it as <code>draft</code> with relaxed validation.</li>
 <li>A <strong>suspended</strong> member cannot sign in at all (see §7).</li>
 </ol>
 
-<h3 id="62-fact-checker">6.2 Fact checker</h3>
+<h3>6.2 Fact checker</h3>
 
 <ol>
 <li>An admin invites them by email at <code>/admins/invitations/new</code> (24-hour, single-use token).</li>
@@ -656,7 +656,7 @@ still has to publish.</li>
 checker can&#39;t sign in, and can&#39;t be assigned new claims.</li>
 </ol>
 
-<h3 id="63-admin">6.3 Admin</h3>
+<h3>6.3 Admin</h3>
 
 <ol>
 <li>Signs in at <code>/session/new</code> (no public admin sign-up — admins are invited by the Super
@@ -679,7 +679,7 @@ fact-checker for ordinary admins), view/resend invitations.</li>
 <li>Admins can post and manage news.</li>
 </ol>
 
-<h3 id="64-super-admin">6.4 Super Admin</h3>
+<h3>6.4 Super Admin</h3>
 
 <p>The Super Admin is an admin with the <code>super_admin</code> flag. There is <strong>exactly one</strong>, enforced
 by a database partial-unique index. They keep full admin abilities and gain an
@@ -702,7 +702,7 @@ and date range (see §8).</li>
 
 <p>Provisioning the Super Admin is an operations task — see §11.</p>
 
-<h3 id="65-public-visitor">6.5 Public visitor</h3>
+<h3>6.5 Public visitor</h3>
 
 <ul>
 <li><code>/marketplace</code> — paginated, filterable list of <strong>published</strong> claims with verdicts, topics,
@@ -711,13 +711,13 @@ regions, search.</li>
 attribution, and <strong>published date + publishing admin</strong>. Related claims by topic at the
 bottom.</li>
 </ul>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="7-ai-chat-assistant"><span class="h2-num">07</span> AI chat assistant</h2>
-
 
 <p>Kasagadi runs a floating <strong>AI chat assistant</strong> (the widget in the corner) across the
 public site and the member / fact-checker / admin portals. Anyone can ask the
@@ -782,13 +782,13 @@ powers claim analysis (<code>analyse</code> / <code>analyse_stream</code>). If t
 
 <p><strong>Realtime + suspension:</strong> <code>ApplicationCable::Connection</code> allows anonymous connections (so
 visitors can chat) and refuses suspended users — see &quot;Account suspension&quot;.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="8-account-suspension"><span class="h2-num">08</span> Account suspension</h2>
-
 
 <p>Any account can be set <code>active</code> or <code>suspended</code> (<code>users.status</code>). Suspension is a hard block
 on access, enforced in depth:</p>
@@ -810,13 +810,13 @@ receive transferred ownership.</li>
 <p>Who can suspend whom: the <strong>Super Admin</strong> suspends/reactivates admins and fact checkers. The
 controls live on each account&#39;s page (and the Admins list), never for the Super Admin&#39;s own
 account.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="9-the-audit-log"><span class="h2-num">09</span> The audit log</h2>
-
 
 <p>Every consequential action writes an immutable <code>AuditLog</code> row: <code>actor</code> (the User who did
 it), <code>action</code>, a polymorphic <code>auditable</code> (usually a Claim or User), <code>metadata</code> (JSONB), and
@@ -871,13 +871,13 @@ it), <code>action</code>, a polymorphic <code>auditable</code> (usually a Claim 
 <p>The Super Admin reads the feed at <code>/super_admins/audit_logs</code>, newest first, filterable by
 <strong>actor</strong> and <strong>date range</strong>. It reads like &quot;Admin A assigned Claim #100&quot;, &quot;Fact Checker B
 completed Claim #100&quot;, &quot;Admin A transferred Claim #101 to Admin C&quot;.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="10-authentication-authorization"><span class="h2-num">10</span> Authentication &amp; authorization</h2>
-
 
 <ul>
 <li><strong>Sessions</strong> — cookie-based; a signed cookie holds a <code>Session.id</code> stored in the DB, so
@@ -897,13 +897,13 @@ one.</li>
 token bound to the password salt, so changing the password invalidates outstanding tokens.
 The request always returns the same generic notice to avoid leaking account existence.</li>
 </ul>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="11-dashboards-analytics"><span class="h2-num">11</span> Dashboards &amp; analytics</h2>
-
 
 <p>The admin dashboard renders lazy-loaded chart frames built by
 <code>Admins::DashboardChartBuilder</code>. What each one <strong>counts</strong>:</p>
@@ -925,6 +925,7 @@ sparse data stays readable; the current period is highlighted.</li>
 
 <p>The Super Admin also gets <strong>per-admin performance</strong> (owned / published / awaiting / in
 progress) on each admin&#39;s page, and <strong>system activity</strong> via the audit log.</p>
+
       </section>
 
       <hr class="divider">
@@ -932,10 +933,9 @@ progress) on each admin&#39;s page, and <strong>system activity</strong> via the
       <section>
         <h2 id="12-operating-the-platform"><span class="h2-num">12</span> Operating the platform</h2>
 
-
 <p>Day-two operations, mostly for the Super Admin / ops.</p>
 
-<h3 id="promote-the-single-super-admin">Promote the (single) Super Admin</h3>
+<h3>Promote the (single) Super Admin</h3>
 
 <p>The person must already be an <strong>active admin</strong>. Run the rake task in production (the app
 deploys with <strong>Kamal</strong>):</p>
@@ -952,23 +952,23 @@ To bootstrap the very first admin when none exists, open a console
 rake task or console to set the super admin.</p>
 </blockquote>
 
-<h3 id="suspend-reactivate-an-account">Suspend / reactivate an account</h3>
+<h3>Suspend / reactivate an account</h3>
 
 <p>As the Super Admin, open the admin&#39;s page (<code>/super_admins/admins/:id</code>) or a fact checker&#39;s
 page (<code>/admins/fact_checkers/:id</code>) and use <strong>Suspend account</strong> / <strong>Reactivate</strong>. Suspension
 signs the user out everywhere immediately and is recorded in the audit log.</p>
 
-<h3 id="transfer-a-claim">Transfer a claim</h3>
+<h3>Transfer a claim</h3>
 
 <p>As the <strong>owner</strong> admin, open the claim and use <strong>Transfer ownership</strong> to hand it to another
 active admin. The receiving admin then sees it in their &quot;Awaiting approval&quot; / owned views.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="13-email-background-jobs"><span class="h2-num">13</span> Email &amp; background jobs</h2>
-
 
 <ul>
 <li><strong>Mailers</strong>: <code>ClaimMailer</code> (assigned, published), <code>InvitationMailer</code>, <code>PasswordsMailer</code>.</li>
@@ -984,13 +984,13 @@ runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
 (both skip suspended users).</li>
 </ul></li>
 </ul>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="14-storage"><span class="h2-num">14</span> Storage</h2>
-
 
 <p>Active Storage is configured for two services:</p>
 
@@ -1003,13 +1003,13 @@ runs in-process when <code>SOLID_QUEUE_IN_PUMA=1</code>).</li>
 <p>Cover images are auto-promoted from the first attached image among the evidence files
 (<code>Claim#promote_cover_image_from_evidence</code>). The shared attachment partials render images and
 <code>mp4/webm/ogg</code> videos inline (with a download overlay) and other types as file cards.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="15-frontend"><span class="h2-num">15</span> Frontend</h2>
-
 
 <ul>
 <li><strong>Tailwind CSS 4</strong> with a Ghana-inspired palette (charcoal primary, gold accent, green
@@ -1030,13 +1030,13 @@ centered.</li>
 <li>&quot;Back&quot; links: omitted on editorial pages (marketplace), included on portal detail pages.</li>
 <li>Destructive actions (suspend) are solid red; restorative actions (reactivate) solid green.</li>
 </ul>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="16-codebase-tour"><span class="h2-num">16</span> Codebase tour</h2>
-
 
 <pre><code>app/
 ├── controllers/
@@ -1067,13 +1067,13 @@ config/
 lib/tasks/rbac.rake             ← rbac:promote_super_admin
 test/                            ← controllers, models, services, helpers, fixtures
 </code></pre>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="17-running-locally"><span class="h2-num">17</span> Running locally</h2>
-
 
 <p>Stack: Ruby 3.3.0, Rails 8.0, PostgreSQL, Tailwind v4, Stimulus / Importmap, Solid Queue.</p>
 
@@ -1083,13 +1083,13 @@ bin/dev              # boots web + tailwind watch + Solid Queue
 
 <p>Sign in with the seeded accounts (see <code>db/seeds.rb</code> — <code>admin@kasagandi.com</code> is seeded as the
 super admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="18-testing"><span class="h2-num">18</span> Testing</h2>
-
 
 <pre><code class="bash">bin/rails test                 # full suite (~470 tests)
 bin/rubocop                    # style
@@ -1108,13 +1108,13 @@ bin/importmap audit            # JS dep audit
 <code>verified_claim</code>, <code>awaiting_approval_claim</code>) plus a second admin for ownership/transfer
 tests.</li>
 </ul>
+
       </section>
 
       <hr class="divider">
 
       <section>
         <h2 id="19-glossary"><span class="h2-num">19</span> Glossary</h2>
-
 
 <ul>
 <li><strong>Claim</strong> — a public statement someone wants verified. The unit of work.</li>
@@ -1131,9 +1131,77 @@ status).</li>
 <li><strong>Super Admin</strong> — the single platform owner; oversees admins, fact-checker accounts, global
 claim visibility, the audit log, and analytics.</li>
 <li><strong>Marketplace</strong> — the public catalogue of published claims.</li>
-<li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon.
-</content></li>
+<li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon.</li>
 </ul>
+
+      </section>
+
+      <hr class="divider">
+
+      <section>
+        <h2 id="20-public-claims-api"><span class="h2-num">20</span> Public claims API</h2>
+
+<p>External partners can list Kasagadi&#39;s <strong>published, fact-checked claims</strong> from their own
+apps through a read-only JSON API. The full, interactive reference lives at
+<strong><a href="api.html">docs.kasagadi.ai/api.html</a></strong> (Swagger UI), backed by the machine-readable
+<a href="openapi.yaml"><code>openapi.yaml</code></a> contract — import that into Postman/Insomnia or a client
+generator.</p>
+
+<ul>
+<li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li>
+<li><strong>Auth:</strong> a per-partner API key sent as <code>Authorization: Bearer kg_live_…</code>. Keys are
+issued by the Kasagadi team, secret, and revocable. Use them <strong>server-to-server</strong> —
+never embed a key in a browser or mobile app.</li>
+<li><strong>Scope:</strong> only <strong>published</strong> claims are ever returned. Drafts and in-progress claims
+are structurally impossible to reach through the API.</li>
+</ul>
+
+<p><strong>Endpoints:</strong></p>
+
+<table><thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Returns</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>/api/v1/claims</code></td>
+<td>GET</td>
+<td>Paginated list of published claims (<code>{ data, meta }</code>).</td>
+</tr>
+<tr>
+<td><code>/api/v1/claims/:id</code></td>
+<td>GET</td>
+<td>A single published claim (<code>{ data }</code>); <code>404</code> if not published.</td>
+</tr>
+</tbody></table>
+
+<p><strong>List filters</strong> (all optional): <code>topic</code>, <code>region</code>, <code>verdict</code>
+(<code>verdict_true</code> / <code>verdict_false</code> / <code>misleading</code> / <code>partly_true</code> / <code>unverifiable</code>),
+<code>q</code> (search over title + content), <code>since</code> (ISO-8601 — only claims published on/after it,
+for incremental syncing), <code>page</code>, and <code>per_page</code> (capped at 100).</p>
+
+<p><strong>Example:</strong></p>
+
+<pre><code class="bash">curl -H &quot;Authorization: Bearer kg_live_xxxxxxxx&quot; \
+  &quot;https://kasagadi.ai/api/v1/claims?topic=Health&amp;per_page=25&quot;
+</code></pre>
+
+<p>Each claim carries <code>title</code>, <code>content</code>, <code>source</code>, <code>topics[]</code>, <code>regions[]</code>, <code>language</code>,
+<code>cover_image_url</code>, <code>published_at</code>, <code>updated_at</code>, a public <code>url</code>, and a <code>verdict</code> block
+(verdict, summary, research, reference link, and the fact-checker&#39;s name + organization).
+Submitter (member) personal data is never exposed.</p>
+
+<p><strong>Security posture:</strong> published-only scoping · keys stored as SHA-256 digests and revocable ·
+Bearer over HTTPS · per-key rate limiting (~300 req/min → <code>429</code>) · no CORS (server-to-server) ·
+an explicit field allowlist (no PII, no internal columns).</p>
+
+<p><strong>Issuing keys (ops):</strong> keys are managed from the console for now —
+<code>bin/rails &quot;api_key:issue[Partner Name]&quot;</code> prints the key <strong>once</strong> (store it immediately),
+<code>bin/rails api_key:list</code> shows all keys and usage, and <code>bin/rails &quot;api_key:revoke[ID]&quot;</code>
+disables one.</p>
+
       </section>
     </article>
 

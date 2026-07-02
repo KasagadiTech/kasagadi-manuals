@@ -1,0 +1,254 @@
+openapi: 3.0.3
+info:
+  title: Kasagadi Claims API
+  version: "1.0.0"
+  description: |
+    Read-only API for listing Kasagadi's **published, fact-checked claims** from an
+    external application.
+
+    ## Authentication
+    Every request must include a partner API key as a Bearer token:
+
+    ```
+    Authorization: Bearer kg_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    ```
+
+    Keys are issued by the Kasagadi team, are secret, and can be revoked at any
+    time. Treat a key like a password — use it **server-to-server** and never
+    embed it in a browser or mobile app.
+
+    ## Conventions
+    - Only **published** claims are ever returned. Drafts and in-progress claims
+      are never exposed.
+    - All timestamps are ISO-8601 (UTC).
+    - Responses are JSON with a `data` payload; list endpoints also include `meta`.
+    - Requests are rate-limited per key (about 300 requests/minute); exceeding the
+      limit returns `429`.
+  contact:
+    name: Kasagadi
+    url: https://docs.kasagadi.ai
+
+servers:
+  - url: https://kasagadi.ai/api/v1
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Claims
+    description: Published, fact-checked claims
+
+paths:
+  /claims:
+    get:
+      tags: [Claims]
+      summary: List published claims
+      description: |
+        Returns a paginated list of published claims, newest first. Use `since`
+        for incremental syncing (only claims published on/after that timestamp).
+      operationId: listClaims
+      parameters:
+        - name: topic
+          in: query
+          description: Filter by topic (e.g. `Health`, `Politics`, `Entertainment`).
+          schema: { type: string }
+        - name: region
+          in: query
+          description: Filter by region (e.g. `Greater Accra`, `Ashanti`).
+          schema: { type: string }
+        - name: verdict
+          in: query
+          description: Filter by the fact-checker's verdict.
+          schema:
+            type: string
+            enum: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+        - name: q
+          in: query
+          description: Full-text search across the claim title and content.
+          schema: { type: string }
+        - name: since
+          in: query
+          description: Return only claims published on/after this ISO-8601 timestamp.
+          schema: { type: string, format: date-time }
+          example: "2026-01-01T00:00:00Z"
+        - name: page
+          in: query
+          description: Page number (1-based).
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          description: Items per page. Capped at 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: A page of claims.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Claim" }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+              example:
+                data:
+                  - id: 259
+                    title: "New WHO study on malaria vaccine"
+                    content: "Posts claim a 'new WHO study' finds the malaria vaccine causes infertility…"
+                    source: "Twitter/X"
+                    topics: ["Health"]
+                    regions: ["Western"]
+                    language: "en"
+                    cover_image_url: "https://kasagadi.ai/rails/active_storage/blobs/redirect/…/cover.jpg"
+                    published_at: "2026-04-01T10:00:00Z"
+                    updated_at: "2026-04-02T09:00:00Z"
+                    url: "https://kasagadi.ai/marketplace/259"
+                    verdict:
+                      verdict: "verdict_false"
+                      summary: "There is no such WHO study; the cited PDF is fabricated."
+                      research: "Checked the WHO publications database and contacted their press office…"
+                      reference_link: "https://who.int/…"
+                      checked_at: "2026-04-01T10:00:00Z"
+                      fact_checker:
+                        name: "Kwame Mensah"
+                        organization: "Ghana Fact-Check Foundation"
+                meta: { page: 1, per_page: 25, total_pages: 3, total_count: 61 }
+        "400":
+          description: Invalid parameter (e.g. a malformed `since` timestamp).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /claims/{id}:
+    get:
+      tags: [Claims]
+      summary: Get a single published claim
+      operationId: getClaim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The claim's numeric id.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The claim.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Claim" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No published claim with that id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Partner API key sent as `Authorization: Bearer <key>`."
+
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or revoked API key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 401, message: "Invalid API key" } }
+    RateLimited:
+      description: Too many requests — slow down.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 429, message: "Rate limit exceeded" } }
+
+  schemas:
+    Claim:
+      type: object
+      properties:
+        id: { type: integer, example: 259 }
+        title: { type: string }
+        content: { type: string, description: "The claim being investigated." }
+        source: { type: string, description: "Where the claim was seen (e.g. a platform or outlet)." }
+        topics:
+          type: array
+          items: { type: string }
+          description: "One or more topics."
+        regions:
+          type: array
+          items: { type: string }
+          description: "One or more regions."
+        language: { type: string, nullable: true, example: "en" }
+        cover_image_url:
+          type: string
+          nullable: true
+          description: "Absolute URL to the claim's cover image, if any."
+        published_at:
+          type: string
+          format: date-time
+          description: "When the verdict was published."
+        updated_at: { type: string, format: date-time }
+        url:
+          type: string
+          description: "Public marketplace page for the claim."
+        verdict:
+          allOf:
+            - $ref: "#/components/schemas/Verdict"
+          nullable: true
+      required: [id, title, content, source, topics, regions, published_at, updated_at, url]
+
+    Verdict:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+        summary:
+          type: string
+          description: "Public-facing explanation of the verdict."
+        research:
+          type: string
+          description: "The fact-checker's methodology and sources."
+        reference_link: { type: string, nullable: true }
+        checked_at: { type: string, format: date-time, nullable: true }
+        fact_checker: { $ref: "#/components/schemas/FactChecker" }
+
+    FactChecker:
+      type: object
+      properties:
+        name: { type: string }
+        organization: { type: string, nullable: true }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        per_page: { type: integer, example: 25 }
+        total_pages: { type: integer, example: 3 }
+        total_count: { type: integer, example: 61 }
+      required: [page, per_page, total_pages, total_count]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            status: { type: integer, example: 401 }
+            message: { type: string, example: "Invalid API key" }

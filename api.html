@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kasagadi AI — Claims API Reference</title>
+  <meta name="description" content="Interactive reference for the Kasagadi read-only Claims API — authenticate with a partner API key and list published, fact-checked claims.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    :root {
+      --primary-900: #0c0d0e;
+      --neutral-400: #9aa0a8;
+      --neutral-100: #eef0f3;
+      --accent-500: #c39528;
+      --accent-600: #a07a1f;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Plus Jakarta Sans", -apple-system, system-ui, sans-serif; background: #fafbfc; }
+
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; padding: 0.9rem 1.5rem;
+      background: var(--primary-900); color: #fff;
+    }
+    .topbar .brand { font-weight: 800; letter-spacing: -0.01em; }
+    .topbar .brand span { color: var(--accent-500); }
+    .topbar a { color: var(--neutral-100); text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+    .topbar a:hover { color: var(--accent-500); }
+
+    .note {
+      max-width: 1100px; margin: 1.25rem auto 0; padding: 0 1.5rem;
+      color: #44474d; font-size: 0.92rem;
+    }
+    .note code { font-family: "JetBrains Mono", ui-monospace, monospace; background: var(--neutral-100); padding: 0.1em 0.4em; border-radius: 0.25rem; }
+
+    /* Swagger UI tweaks to match the docs palette */
+    .swagger-ui .topbar { display: none; }
+    .swagger-ui .info { margin: 1.5rem 0; }
+    .swagger-ui .btn.authorize, .swagger-ui .btn.authorize svg { border-color: var(--accent-600); color: var(--accent-600); fill: var(--accent-600); }
+    #swagger-ui { max-width: 1100px; margin: 0 auto; padding: 0 1rem 3rem; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Kasagadi<span> API</span></div>
+    <a href="index.html">← Documentation home</a>
+  </div>
+
+  <p class="note">
+    Read-only API for listing published, fact-checked claims. Authenticate by clicking
+    <strong>Authorize</strong> and pasting your partner key (format <code>kg_live_…</code>),
+    which is sent as <code>Authorization: Bearer &lt;key&gt;</code>. Need a key? Contact the Kasagadi team.
+  </p>
+
+  <div id="swagger-ui"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js" crossorigin></script>
+  <script>
+    window.addEventListener("load", function () {
+      window.ui = SwaggerUIBundle({
+        url: "openapi.yaml",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "BaseLayout",
+        defaultModelsExpandDepth: 1,
+        docExpansion: "list",
+        persistAuthorization: true
+      });
+    });
+  </script>
+</body>
+</html>

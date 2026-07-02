@@ -543,4 +543,53 @@ Conventions:
   claim visibility, the audit log, and analytics.
 - **Marketplace** — the public catalogue of published claims.
 - **Accredited** — fact checkers with `verified: true`, marked with a check icon.
-</content>
+
+---
+
+## Public claims API
+
+External partners can list Kasagadi's **published, fact-checked claims** from their own
+apps through a read-only JSON API. The full, interactive reference lives at
+**[docs.kasagadi.ai/api.html](api.html)** (Swagger UI), backed by the machine-readable
+[`openapi.yaml`](openapi.yaml) contract — import that into Postman/Insomnia or a client
+generator.
+
+- **Base URL:** `https://kasagadi.ai/api/v1`
+- **Auth:** a per-partner API key sent as `Authorization: Bearer kg_live_…`. Keys are
+  issued by the Kasagadi team, secret, and revocable. Use them **server-to-server** —
+  never embed a key in a browser or mobile app.
+- **Scope:** only **published** claims are ever returned. Drafts and in-progress claims
+  are structurally impossible to reach through the API.
+
+**Endpoints:**
+
+| Endpoint | Method | Returns |
+|---|---|---|
+| `/api/v1/claims` | GET | Paginated list of published claims (`{ data, meta }`). |
+| `/api/v1/claims/:id` | GET | A single published claim (`{ data }`); `404` if not published. |
+
+**List filters** (all optional): `topic`, `region`, `verdict`
+(`verdict_true` / `verdict_false` / `misleading` / `partly_true` / `unverifiable`),
+`q` (search over title + content), `since` (ISO-8601 — only claims published on/after it,
+for incremental syncing), `page`, and `per_page` (capped at 100).
+
+**Example:**
+
+```bash
+curl -H "Authorization: Bearer kg_live_xxxxxxxx" \
+  "https://kasagadi.ai/api/v1/claims?topic=Health&per_page=25"
+```
+
+Each claim carries `title`, `content`, `source`, `topics[]`, `regions[]`, `language`,
+`cover_image_url`, `published_at`, `updated_at`, a public `url`, and a `verdict` block
+(verdict, summary, research, reference link, and the fact-checker's name + organization).
+Submitter (member) personal data is never exposed.
+
+**Security posture:** published-only scoping · keys stored as SHA-256 digests and revocable ·
+Bearer over HTTPS · per-key rate limiting (~300 req/min → `429`) · no CORS (server-to-server) ·
+an explicit field allowlist (no PII, no internal columns).
+
+**Issuing keys (ops):** keys are managed from the console for now —
+`bin/rails "api_key:issue[Partner Name]"` prints the key **once** (store it immediately),
+`bin/rails api_key:list` shows all keys and usage, and `bin/rails "api_key:revoke[ID]"`
+disables one.
