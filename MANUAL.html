@@ -473,7 +473,7 @@ and authorization.</p>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
-<td>Reset an admin&#39;s password</td>
+<td>Reset an account&#39;s password</td>
 <td style="text-align: center">—</td>
 <td style="text-align: center">—</td>
 <td style="text-align: center">—</td>
@@ -625,7 +625,7 @@ metadata. See §8.</li>
 <ol>
 <li>Signs up at <code>/registration/new</code> → a <code>User</code> + <code>Member</code> are created, signed in, landed on
 <code>/members/dashboard</code>.</li>
-<li><code>/members/claims/new</code> — fills title, content, source, topic, region, and zero or more
+<li><code>/members/claims/new</code> — fills title, content, source, <strong>one or more optional source links</strong>, topic, region, and zero or more
 evidence rows.</li>
 <li><strong>Submit</strong> runs the <code>submit</code> event → <code>pending_assignment</code> (validated). <strong>Save draft</strong>
 keeps it as <code>draft</code> with relaxed validation.</li>
@@ -694,6 +694,10 @@ the list header) <strong>invite a new admin</strong>. They can&#39;t suspend the
 account.</li>
 <li><strong>Fact checkers</strong> — the existing <code>/admins/fact_checkers</code> pages gain <strong>suspend / reactivate</strong>
 controls that only the Super Admin sees.</li>
+<li><strong>Members</strong> (<code>/admins/members</code>) — list every member; open a member&#39;s page to see their
+submitted claims and profile, and (Super Admin only) <strong>suspend / reactivate</strong> the account or
+<strong>reset password</strong> (a reset emails the standard 15-minute link; refused while the member is
+suspended).</li>
 <li><strong>Claims</strong> — the standard <code>/admins/claims</code> list, but the Super Admin additionally sees a
 <strong>Drafts</strong> tab and drafts in &quot;All&quot; (full platform visibility). Still read-only oversight —
 they can only publish/transfer claims they personally own.</li>
@@ -708,7 +712,7 @@ and date range (see §8).</li>
 <ul>
 <li><code>/marketplace</code> — paginated, filterable list of <strong>published</strong> claims with verdicts, topics,
 regions, search.</li>
-<li><code>/marketplace/:id</code> — full claim detail: verdict, body, evidence, research, fact-checker
+<li><code>/marketplace/:id</code> — full claim detail: verdict, body, evidence, <strong>source links</strong>, research, fact-checker
 attribution, and <strong>published date + publishing admin</strong>. Related claims by topic at the
 bottom.</li>
 </ul>
@@ -808,7 +812,7 @@ live Turbo Stream updates.</li>
 receive transferred ownership.</li>
 </ul>
 
-<p>Who can suspend whom: the <strong>Super Admin</strong> suspends/reactivates admins and fact checkers. The
+<p>Who can suspend whom: the <strong>Super Admin</strong> suspends/reactivates admins, fact checkers, and members. The
 controls live on each account&#39;s page (and the Admins list), never for the Super Admin&#39;s own
 account.</p>
       </section>
@@ -955,8 +959,9 @@ rake task or console to set the super admin.</p>
 
 <h3>Suspend / reactivate an account</h3>
 
-<p>As the Super Admin, open the admin&#39;s page (<code>/super_admins/admins/:id</code>) or a fact checker&#39;s
-page (<code>/admins/fact_checkers/:id</code>) and use <strong>Suspend account</strong> / <strong>Reactivate</strong>. Suspension
+<p>As the Super Admin, open the admin&#39;s page (<code>/super_admins/admins/:id</code>), a fact checker&#39;s
+page (<code>/admins/fact_checkers/:id</code>), or a member&#39;s page (<code>/admins/members/:id</code>) and use
+<strong>Suspend account</strong> / <strong>Reactivate</strong> (admin and member pages also offer <strong>Reset password</strong>). Suspension
 signs the user out everywhere immediately and is recorded in the audit log.</p>
 
 <h3>Transfer a claim</h3>

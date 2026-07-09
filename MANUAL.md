@@ -52,7 +52,7 @@ Public visitors (no account) can browse the marketplace and read published claim
 | Invite a fact checker | — | — | ✅ | ✅ |
 | Invite an admin | — | — | — | ✅ |
 | Suspend / reactivate an account | — | — | — | ✅ |
-| Reset an admin's password | — | — | — | ✅ |
+| Reset an account's password | — | — | — | ✅ |
 | See drafts / every claim | — | — | — | ✅ |
 | View the audit log | — | — | — | ✅ |
 
@@ -162,8 +162,8 @@ fact checker, and the assigned / completed / published dates.
 
 1. Signs up at `/registration/new` → a `User` + `Member` are created, signed in, landed on
    `/members/dashboard`.
-2. `/members/claims/new` — fills title, content, source, topic, region, and zero or more
-   evidence rows.
+2. `/members/claims/new` — fills title, content, source, **one or more optional source
+   links**, topic, region, and zero or more evidence rows.
 3. **Submit** runs the `submit` event → `pending_assignment` (validated). **Save draft**
    keeps it as `draft` with relaxed validation.
 4. Drafts can be edited/destroyed; submitted claims cannot.
@@ -219,10 +219,14 @@ by a database partial-unique index. They keep full admin abilities and gain an
    account.
 2. **Fact checkers** — the existing `/admins/fact_checkers` pages gain **suspend / reactivate**
    controls that only the Super Admin sees.
-3. **Claims** — the standard `/admins/claims` list, but the Super Admin additionally sees a
+3. **Members** (`/admins/members`) — list every member; open a member's page to see their
+   submitted claims and profile, and (Super Admin only) **suspend / reactivate** the account or
+   **reset password** (a reset emails the standard 15-minute link; refused while the member is
+   suspended).
+4. **Claims** — the standard `/admins/claims` list, but the Super Admin additionally sees a
    **Drafts** tab and drafts in "All" (full platform visibility). Still read-only oversight —
    they can only publish/transfer claims they personally own.
-4. **Audit Log** (`/super_admins/audit_logs`) — the full activity feed, filterable by actor
+5. **Audit Log** (`/super_admins/audit_logs`) — the full activity feed, filterable by actor
    and date range (see §8).
 
 Provisioning the Super Admin is an operations task — see §11.
@@ -231,8 +235,8 @@ Provisioning the Super Admin is an operations task — see §11.
 
 - `/marketplace` — paginated, filterable list of **published** claims with verdicts, topics,
   regions, search.
-- `/marketplace/:id` — full claim detail: verdict, body, evidence, research, fact-checker
-  attribution, and **published date + publishing admin**. Related claims by topic at the
+- `/marketplace/:id` — full claim detail: verdict, body, evidence, **source links**, research,
+  fact-checker attribution, and **published date + publishing admin**. Related claims by topic at the
   bottom.
 
 ---
@@ -299,7 +303,7 @@ on access, enforced in depth:
 - **Work routing** — suspended fact checkers can't be assigned claims; suspended admins can't
   receive transferred ownership.
 
-Who can suspend whom: the **Super Admin** suspends/reactivates admins and fact checkers. The
+Who can suspend whom: the **Super Admin** suspends/reactivates admins, fact checkers, and members. The
 controls live on each account's page (and the Admins list), never for the Super Admin's own
 account.
 
@@ -397,9 +401,10 @@ To bootstrap the very first admin when none exists, open a console
 
 ### Suspend / reactivate an account
 
-As the Super Admin, open the admin's page (`/super_admins/admins/:id`) or a fact checker's
-page (`/admins/fact_checkers/:id`) and use **Suspend account** / **Reactivate**. Suspension
-signs the user out everywhere immediately and is recorded in the audit log.
+As the Super Admin, open the admin's page (`/super_admins/admins/:id`), a fact checker's
+page (`/admins/fact_checkers/:id`), or a member's page (`/admins/members/:id`) and use
+**Suspend account** / **Reactivate** (admin and member pages also offer **Reset password**).
+Suspension signs the user out everywhere immediately and is recorded in the audit log.
 
 ### Transfer a claim
 
