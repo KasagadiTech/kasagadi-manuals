@@ -730,9 +730,10 @@ fact-checking AI a question and get a streamed, sourced answer.</p>
 
 <ul>
 <li><strong>Who can use it:</strong> everyone — signed-in users <em>and</em> anonymous visitors. A signed-in
-user gets a <code>Conversation</code> owned by their account; an anonymous visitor gets one keyed
-by a per-browser token in the session cookie (<code>session[:chatbot_token]</code>). A conversation
-must have a user or a token, never neither.</li>
+user gets a <code>Conversation</code> owned by their account. An anonymous visitor gets nothing
+stored at all: no conversation row, no session token. Their thread lives only in the
+open widget, which reads its own bubbles back and posts them as context on each
+message, and it ends when the panel or the tab closes.</li>
 <li><strong>Records:</strong> a <code>Conversation</code> has many <code>Message</code>s; each has a <code>role</code> (<code>user</code> /
 <code>assistant</code>), <code>content</code>, and (for assistant turns) a <code>sources</code> JSON list. The last ~20
 turns are sent upstream as history.</li>
@@ -774,10 +775,19 @@ created together and can&#39;t desync.</li>
 and, as tokens arrive, <strong>coalesces</strong> them into ~7 fps updates
 (<code>CHUNK_FLUSH_INTERVAL = 0.15s</code>) broadcast over Action Cable
 (<code>Turbo::StreamsChannel.broadcast_update_to</code>).</li>
+<li>Until the reply settles, the bubble keeps a pulsing &quot;still writing&quot; indicator beneath
+whatever text has arrived, so a pause between chunks reads as work in progress rather
+than a reply that ended mid-sentence. After 15s with no update the widget backs the dots
+up with &quot;Still working on it…&quot;; after 210s (just past the client&#39;s own read timeout) it
+gives up on the bubble and offers the question back.</li>
 <li>On <code>done</code> it persists the user + assistant messages atomically and swaps the bubble for
 the final styled card (rendered Markdown + sources). On error it replaces the bubble with
 a danger notice carrying a <strong>retry</strong> button — the original message is embedded, so a click
 re-sends with no client-side state.</li>
+<li>The job always settles the bubble exactly once. If the upstream stops without a terminal
+frame (dropped connection, read timeout), whatever text arrived is shown labelled as cut
+off, with a retry. A cut-off reply is never stored and never counted as a turn, so it
+stays out of the history either side sends back.</li>
 </ol>
 
 <p><strong>External dependency:</strong> answers come from the <strong>FactCheckAI</strong> service — a thin Ruby client

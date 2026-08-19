@@ -248,9 +248,10 @@ public site and the member / fact-checker / admin portals. Anyone can ask the
 fact-checking AI a question and get a streamed, sourced answer.
 
 - **Who can use it:** everyone — signed-in users *and* anonymous visitors. A signed-in
-  user gets a `Conversation` owned by their account; an anonymous visitor gets one keyed
-  by a per-browser token in the session cookie (`session[:chatbot_token]`). A conversation
-  must have a user or a token, never neither.
+  user gets a `Conversation` owned by their account. An anonymous visitor gets nothing
+  stored at all: no conversation row, no session token. Their thread lives only in the
+  open widget, which reads its own bubbles back and posts them as context on each
+  message, and it ends when the panel or the tab closes.
 - **Records:** a `Conversation` has many `Message`s; each has a `role` (`user` /
   `assistant`), `content`, and (for assistant turns) a `sources` JSON list. The last ~20
   turns are sent upstream as history.
@@ -273,10 +274,19 @@ Two endpoints — this is the closest thing the app has to a programmatic **API*
    and, as tokens arrive, **coalesces** them into ~7 fps updates
    (`CHUNK_FLUSH_INTERVAL = 0.15s`) broadcast over Action Cable
    (`Turbo::StreamsChannel.broadcast_update_to`).
-3. On `done` it persists the user + assistant messages atomically and swaps the bubble for
+3. Until the reply settles, the bubble keeps a pulsing "still writing" indicator beneath
+   whatever text has arrived, so a pause between chunks reads as work in progress rather
+   than a reply that ended mid-sentence. After 15s with no update the widget backs the dots
+   up with "Still working on it..."; after 210s (just past the client's own read timeout) it
+   gives up on the bubble and offers the question back.
+4. On `done` it persists the user + assistant messages atomically and swaps the bubble for
    the final styled card (rendered Markdown + sources). On error it replaces the bubble with
    a danger notice carrying a **retry** button — the original message is embedded, so a click
    re-sends with no client-side state.
+5. The job always settles the bubble exactly once. If the upstream stops without a terminal
+   frame (dropped connection, read timeout), whatever text arrived is shown labelled as cut
+   off, with a retry. A cut-off reply is never stored and never counted as a turn, so it
+   stays out of the history either side sends back.
 
 **External dependency:** answers come from the **FactCheckAI** service — a thin Ruby client
 (`lib/fact_check_ai/`) over a configurable REST API (`FACTCHECK_AI_API_URL`). The same client
