@@ -160,6 +160,8 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -189,6 +191,8 @@ paths:
                   data: { $ref: "#/components/schemas/Claim" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
         "404":
           description: No published claim with that id.
           content:
@@ -295,6 +299,8 @@ paths:
                 required: [data]
                 properties:
                   data: { $ref: "#/components/schemas/SessionWithUser" }
+        "400":
+          $ref: "#/components/responses/MalformedJson"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "429":
@@ -501,7 +507,13 @@ paths:
         - name: code
           in: path
           required: true
-          description: The 6-digit code from the email.
+          description: |
+            The 6-digit code from the email.
+
+            Prefer sending `reset_code` in the request body instead: a path segment
+            is written verbatim into the server's request log and every proxy access
+            log, and cannot be redacted. When `reset_code` is present in the body it
+            takes precedence and this segment is ignored, so send any placeholder.
           schema: { type: string, pattern: "^[0-9]{6}$" }
           example: "482913"
       requestBody:
@@ -513,6 +525,12 @@ paths:
               required: [email_address, password, password_confirmation]
               properties:
                 email_address: { type: string, format: email }
+                reset_code:
+                  type: string
+                  pattern: "^[0-9]{6}$"
+                  description: |
+                    The 6-digit code. Preferred over the path segment, which ends up
+                    in access logs. Takes precedence when both are given.
                 password:
                   type: string
                   format: password
@@ -579,8 +597,11 @@ components:
     NoMobileAccess:
       description: |
         The credential is valid, but the account may not use the mobile app: it is
-        an administrator, or it holds no member or fact-checker role. Re-checked on
-        every request, so this can appear after a role changes mid-session.
+        an administrator, or it holds no member or fact-checker role. Administrators
+        are excluded even when they also hold a member or fact-checker record.
+
+        Re-checked on every request, and on every endpoint that accepts a user
+        access token, so this can appear after a role changes mid-session.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
