@@ -140,6 +140,17 @@
         display: block;
         position: sticky; top: 4.5rem;
         font-size: 0.8125rem;
+        /* The list is taller than a laptop viewport now, and a sticky element
+           cannot be scrolled by the page. Without these the last entries are
+           simply unreachable. */
+        max-height: calc(100vh - 6rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: 0.5rem;
+      }
+      .toc::-webkit-scrollbar { width: 6px; }
+      .toc::-webkit-scrollbar-thumb {
+        background: var(--neutral-200); border-radius: 3px;
       }
       .toc-label {
         font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em;
