@@ -1,29 +1,62 @@
 openapi: 3.0.3
 info:
-  title: Kasagadi Claims API
-  version: "1.0.0"
+  title: Kasagadi API
+  version: "1.1.0"
   description: |
-    Read-only API for listing Kasagadi's **published, fact-checked claims** from an
-    external application.
+    The JSON API behind Kasagadi. It serves two different audiences, with two
+    different credentials.
 
-    ## Authentication
-    Every request must include a partner API key as a Bearer token:
+    ## Partner API
+
+    Read-only access to Kasagadi's **published, fact-checked claims** from an
+    external application. Every request carries a partner API key:
 
     ```
     Authorization: Bearer kg_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ```
 
     Keys are issued by the Kasagadi team, are secret, and can be revoked at any
-    time. Treat a key like a password — use it **server-to-server** and never
-    embed it in a browser or mobile app.
+    time. Treat a key like a password: use it **server-to-server** and never
+    embed it in a browser or a mobile app.
+
+    ## Mobile API
+
+    The endpoints the Kasagadi mobile app uses to register, sign in and act on
+    behalf of a person. These authenticate with a **user access token** obtained
+    from `POST /auth/login`, not with a partner key. The app ships no API key.
+
+    ```
+    Authorization: Bearer <access_token>
+    ```
+
+    Access tokens last 30 minutes. Exchange the refresh token at
+    `POST /auth/refresh` for a fresh pair; spending a refresh token rotates it,
+    so the previous pair stops working immediately. Suspending an account
+    destroys its sessions, which invalidates both tokens at once.
+
+    Only **members** and **fact-checkers** may sign in here. Administrators are
+    refused and directed to the web portal.
+
+    ## Which credential does an endpoint take?
+
+    Each operation below states its own. In short:
+
+    - `/claims` and `/claims/{id}` accept **either** a partner key or a user
+      access token, because a published claim is the same public payload either
+      way.
+    - `/me` and `/auth/logout` require a **user access token**.
+    - `/config` and the rest of `/auth/*` take **no credential**, since they run
+      before the app has one.
 
     ## Conventions
+
     - Only **published** claims are ever returned. Drafts and in-progress claims
       are never exposed.
     - All timestamps are ISO-8601 (UTC).
     - Responses are JSON with a `data` payload; list endpoints also include `meta`.
-    - Requests are rate-limited per key (about 300 requests/minute); exceeding the
-      limit returns `429`.
+    - Errors are `{ "error": { "status", "message" } }`, plus a `details` object
+      of field errors on a `422`.
+    - Requests are rate-limited; exceeding a limit returns `429`.
   contact:
     name: Kasagadi
     url: https://docs.kasagadi.ai
@@ -32,12 +65,13 @@ servers:
   - url: https://kasagadi.ai/api/v1
     description: Production
 
-security:
-  - bearerAuth: []
-
 tags:
   - name: Claims
     description: Published, fact-checked claims
+  - name: Authentication
+    description: Register, sign in, refresh and password recovery (mobile app)
+  - name: Account
+    description: The signed-in user, and app configuration
 
 paths:
   /claims:
@@ -48,6 +82,9 @@ paths:
         Returns a paginated list of published claims, newest first. Use `since`
         for incremental syncing (only claims published on/after that timestamp).
       operationId: listClaims
+      security:
+        - partnerApiKey: []
+        - mobileAccessToken: []
       parameters:
         - name: topic
           in: query
@@ -131,6 +168,9 @@ paths:
       tags: [Claims]
       summary: Get a single published claim
       operationId: getClaim
+      security:
+        - partnerApiKey: []
+        - mobileAccessToken: []
       parameters:
         - name: id
           in: path
@@ -157,20 +197,359 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /config:
+    get:
+      tags: [Account]
+      summary: App configuration
+      description: |
+        The limits and vocabularies the app caches on launch, read before anyone
+        signs in. Every value is read from the model that enforces it, so an
+        upload limit cannot be raised on the server and stay stale in the app.
+      operationId: getConfig
+      security: []
+      responses:
+        "200":
+          description: The configuration.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Config" }
+
+  /me:
+    get:
+      tags: [Account]
+      summary: The signed-in user
+      description: |
+        Role routing. Tells the app which portal to open and what to render in
+        it. `role` is `member` or `fact_checker`, and `profile` carries the
+        fields for that role.
+
+        `abilities` is a routing hint, not authorization: the server enforces
+        every rule regardless of what the client believes it may do.
+      operationId: getMe
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The signed-in user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new member
+      description: |
+        Creates the account and its member record together, then signs it in.
+        There is no email verification step: the response already carries a
+        usable token pair. Fact-checker accounts are not self-registered; they
+        arrive by invitation.
+
+        Rate limited to 5 per hour per IP.
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email_address, password, password_confirmation]
+              properties:
+                name: { type: string, example: "Ama Owusu" }
+                email_address: { type: string, format: email, example: "ama@example.com" }
+                password: { type: string, format: password, minLength: 1, maxLength: 72 }
+                password_confirmation: { type: string, format: password }
+      responses:
+        "201":
+          description: Account created and signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/SessionWithUser" }
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in
+      description: |
+        Members and fact-checkers only. Administrators are refused and pointed at
+        the web portal.
+
+        The credentials are checked before the account state is, so neither `403`
+        below can be used to discover whether an email address has an account.
+
+        Rate limited to 10 per 3 minutes, per email address and IP.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address, password]
+              properties:
+                email_address: { type: string, format: email, example: "ama@example.com" }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/SessionWithUser" }
+        "401":
+          description: Wrong email address or password.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 401, message: "Try another email address or password." } }
+        "403":
+          description: |
+            The credentials were correct, but the account may not use the mobile
+            app: it is suspended, it is an administrator, or it holds no role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                suspended:
+                  value: { error: { status: 403, message: "Your account has been suspended. Contact an administrator." } }
+                administrator:
+                  value: { error: { status: 403, message: "Administrators sign in on the web portal." } }
+                noRole:
+                  value: { error: { status: 403, message: "This account does not have mobile access." } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Exchange a refresh token for a new pair
+      description: |
+        Rotation: spending a refresh token issues a new pair and invalidates the
+        old one immediately, so a stolen token is useful only until the app next
+        refreshes. Replaying a spent token returns `401`.
+
+        The response omits `user`, which the client already holds.
+
+        Rate limited to 30 per minute per IP.
+      operationId: refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: A fresh token pair.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Session" }
+        "401":
+          description: The refresh token is unknown, expired, already spent, or belongs to a suspended account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 401, message: "That refresh token is invalid or has expired." } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/logout:
+    delete:
+      tags: [Authentication]
+      summary: Sign out this device
+      description: |
+        Destroys only the session behind the presented token; the account stays
+        signed in on its other devices.
+
+        Always returns `204`, even for an expired, already-rotated or malformed
+        token. Signing out must never fail, or a client is left holding a token
+        it cannot discard.
+      operationId: logout
+      security:
+        - mobileAccessToken: []
+      responses:
+        "204":
+          description: Signed out. No body.
+
+  /auth/password_resets:
+    post:
+      tags: [Authentication]
+      summary: Request a password reset code
+      description: |
+        Emails a 6-digit code, valid for 15 minutes and usable once. A code is
+        sent only if the account exists and is active, but the response is
+        identical either way so this cannot be used to discover which email
+        addresses have accounts.
+
+        A code is used rather than a link so no deep-link setup is needed, and so
+        a mail opened on a different device still works.
+
+        Rate limited to 5 per hour per email address.
+      operationId: requestPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address]
+              properties:
+                email_address: { type: string, format: email }
+      responses:
+        "202":
+          description: Accepted. The same response whether or not the account exists.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message: { type: string }
+              example:
+                data: { message: "If an account exists for that email address, a reset code is on its way." }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/password_resets/{code}:
+    put:
+      tags: [Authentication]
+      summary: Complete a password reset
+      description: |
+        Spends the emailed code and sets the new password. On success every
+        session for the account is destroyed, on every device, because a reset
+        exists to lock an intruder out.
+
+        No tokens are returned: the app sends the person back to the sign-in
+        screen, so a stolen code cannot also hand over a session.
+
+        The new password is validated **before** the code is spent, so a typo in
+        the confirmation costs a retry rather than a whole new code. A wrong code
+        counts an attempt; the fifth wrong attempt destroys the code.
+
+        Rate limited to 10 per 15 minutes per IP.
+      operationId: completePasswordReset
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: The 6-digit code from the email.
+          schema: { type: string, pattern: "^[0-9]{6}$" }
+          example: "482913"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address, password, password_confirmation]
+              properties:
+                email_address: { type: string, format: email }
+                password: { type: string, format: password }
+                password_confirmation: { type: string, format: password }
+      responses:
+        "200":
+          description: Password reset. All sessions destroyed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message: { type: string }
+              example:
+                data: { message: "Your password has been reset. Please sign in." }
+        "401":
+          description: |
+            Unknown email address, no code on file, wrong code, expired code, or
+            five attempts already spent. Deliberately one message for all of them.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 401, message: "That reset code is invalid or has expired." } }
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
 components:
   securitySchemes:
-    bearerAuth:
+    partnerApiKey:
       type: http
       scheme: bearer
-      description: "Partner API key sent as `Authorization: Bearer <key>`."
+      description: |
+        A per-partner API key, issued by the Kasagadi team and revocable at any
+        time. Treat it like a password: use it server-to-server and never embed
+        it in a browser or a mobile app.
+    mobileAccessToken:
+      type: http
+      scheme: bearer
+      description: |
+        A short-lived user access token from `POST /auth/login`. Expires after 30
+        minutes; exchange the refresh token at `POST /auth/refresh` for a new
+        pair. Destroyed immediately when the account is suspended.
 
   responses:
     Unauthorized:
-      description: Missing, invalid, or revoked API key.
+      description: Missing or invalid credential (partner key or user access token).
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
-          example: { error: { status: 401, message: "Invalid API key" } }
+          example: { error: { status: 401, message: "Invalid credentials" } }
+    InvalidAccessToken:
+      description: Missing, expired or invalid user access token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 401, message: "Invalid or expired access token" } }
+    ValidationFailed:
+      description: The submitted fields were rejected. `details` names each one.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              status: 422
+              message: "Validation failed"
+              details: { email_address: ["has already been taken"] }
     RateLimited:
       description: Too many requests — slow down.
       content:
@@ -235,6 +614,128 @@ components:
         name: { type: string }
         organization: { type: string, nullable: true }
 
+    Session:
+      type: object
+      description: A freshly issued token pair.
+      properties:
+        token_type: { type: string, enum: [Bearer], example: "Bearer" }
+        access_token:
+          type: string
+          description: "Send as `Authorization: Bearer <access_token>`."
+        refresh_token:
+          type: string
+          description: "Spend at POST /auth/refresh. Rotated on use."
+        expires_in:
+          type: integer
+          description: "Access token lifetime in seconds."
+          example: 1800
+        refresh_expires_in:
+          type: integer
+          description: "Refresh token lifetime in seconds."
+          example: 2592000
+      required: [token_type, access_token, refresh_token, expires_in, refresh_expires_in]
+
+    SessionWithUser:
+      allOf:
+        - $ref: "#/components/schemas/Session"
+        - type: object
+          properties:
+            user: { $ref: "#/components/schemas/User" }
+          required: [user]
+
+    User:
+      type: object
+      properties:
+        id: { type: integer, example: 3 }
+        name: { type: string, example: "Ama Owusu" }
+        email_address: { type: string, format: email, example: "ama@example.com" }
+        avatar_url: { type: string, nullable: true }
+        status: { type: string, enum: [active, suspended], example: "active" }
+        role:
+          type: string
+          enum: [member, fact_checker]
+          description: "Which portal the app should open."
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/MemberProfile"
+            - $ref: "#/components/schemas/FactCheckerProfile"
+        abilities:
+          type: array
+          items: { type: string }
+          description: |
+            A routing hint for the client: which tabs and actions to render.
+            NOT authorization. The server enforces every rule regardless.
+          example: ["marketplace.browse", "chat.use", "claims.create", "claims.submit", "claims.track"]
+        created_at: { type: string, format: date-time }
+      required: [id, name, email_address, status, role, profile, abilities, created_at]
+
+    MemberProfile:
+      type: object
+      properties:
+        organization: { type: string, nullable: true, example: "Citi FM" }
+        phone: { type: string, nullable: true }
+        region: { type: string, nullable: true, example: "Greater Accra" }
+        bio: { type: string, nullable: true }
+
+    FactCheckerProfile:
+      type: object
+      properties:
+        organization: { type: string, nullable: true, example: "FactCheck Ghana" }
+        specialty: { type: string, nullable: true, example: "Politics" }
+        phone: { type: string, nullable: true }
+        region: { type: string, nullable: true, example: "Ashanti" }
+        bio: { type: string, nullable: true }
+        verified: { type: boolean, example: true }
+
+    Config:
+      type: object
+      properties:
+        api_version: { type: string, example: "v1" }
+        min_supported_app_version:
+          type: string
+          example: "1.0.0"
+          description: "Prompt an upgrade if the running app is older than this."
+        uploads:
+          type: object
+          properties:
+            evidence:
+              type: object
+              properties:
+                max_bytes: { type: integer, example: 10485760 }
+                content_types:
+                  type: array
+                  items: { type: string }
+                formats_label:
+                  type: string
+                  example: "JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG"
+            avatar:
+              type: object
+              properties:
+                max_bytes: { type: integer, example: 5242880 }
+                content_types:
+                  type: array
+                  items: { type: string }
+                  example: ["image/png", "image/jpeg", "image/webp"]
+        claim_statuses:
+          type: array
+          items: { type: string }
+          example: [draft, pending_assignment, in_progress, published, unpublished]
+        verdicts:
+          type: array
+          items: { type: string }
+          example: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+        assignment_statuses:
+          type: array
+          items: { type: string }
+          example: [pending, in_progress, completed, rejected]
+        links:
+          type: object
+          properties:
+            privacy_policy: { type: string, format: uri }
+            terms: { type: string, format: uri }
+            cookies: { type: string, format: uri }
+      required: [api_version, min_supported_app_version, uploads, claim_statuses, verdicts, assignment_statuses, links]
+
     PageMeta:
       type: object
       properties:
@@ -251,4 +752,12 @@ components:
           type: object
           properties:
             status: { type: integer, example: 401 }
-            message: { type: string, example: "Invalid API key" }
+            message: { type: string, example: "Invalid credentials" }
+        details:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: array
+            items: { type: string }
+          description: "Field errors, present on a 422."
+          example: { email_address: ["has already been taken"] }
