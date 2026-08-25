@@ -609,3 +609,371 @@ allowlist (no PII, no internal columns).
 `bin/rails "api_key:issue[Partner Name]"` prints the key **once** (store it immediately),
 `bin/rails api_key:list` shows all keys and usage, and `bin/rails "api_key:revoke[ID]"`
 disables one.
+
+## Mobile API journeys
+
+Written for the mobile team. The [Swagger reference](api.html) says what each endpoint
+accepts and returns; this section says **when to call it, in what order, and what to do
+with the answer**. Each journey follows one person through one task.
+
+- **Base URL:** `https://kasagadi.ai/api/v1`
+- **Credential:** an access token from `POST /auth/login`, sent as
+  `Authorization: Bearer <access_token>`. The app ships **no** API key. The partner key
+  described in §20 is a different credential for a different audience: never put one in
+  the app.
+- **Two roles reach the app:** members of the public, and accredited fact-checkers.
+  Administrators are refused and told to use the web portal.
+
+### 21.1 The two tokens, in one paragraph
+
+Signing in returns a pair. The **access token** rides on every request and lasts
+**30 minutes**. The **refresh token** does nothing but buy a new pair, and lasts
+**30 days**. Spending a refresh token invalidates it and issues a new one, so the app
+always holds exactly one live pair. Store both in the device keychain, never in plain
+preferences, and never write either into a log.
+
+| | Lifetime | Used for |
+|---|---|---|
+| `access_token` | 30 minutes | Every authenticated request |
+| `refresh_token` | 30 days, rolling | Only `POST /auth/refresh` |
+
+### 21.2 Kofi opens the app for the first time
+
+*Kofi has just installed Kasagadi. He hasn't signed in and hasn't tapped anything.*
+
+Before the login screen renders, fetch the configuration. It needs no credential.
+
+```
+GET /api/v1/config
+```
+
+```json
+{ "data": {
+  "api_version": "v1",
+  "min_supported_app_version": "1.0.0",
+  "uploads": {
+    "evidence": { "max_bytes": 10485760, "content_types": ["image/jpeg", "…"],
+                  "formats_label": "JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG" },
+    "avatar":   { "max_bytes": 5242880, "content_types": ["image/png", "image/jpeg", "image/webp"] }
+  },
+  "claim_statuses": ["draft", "pending_assignment", "in_progress", "published", "unpublished"],
+  "verdicts": ["verdict_true", "verdict_false", "misleading", "partly_true", "unverifiable"],
+  "assignment_statuses": ["pending", "in_progress", "completed", "rejected"],
+  "links": { "privacy_policy": "https://…/privacy", "terms": "https://…/terms", "cookies": "https://…/cookies" }
+} }
+```
+
+**What the app does with it.** Cache it on disk and refresh on each cold start. Drive the
+file picker from `uploads.evidence` rather than hard-coding "10MB" — server limits can
+change, and a hard-coded copy will drift and reject files the server would accept, or
+accept files it rejects. Render verdict and status labels from these lists so a new verdict
+type does not require an app release. Compare the running build against
+`min_supported_app_version` and prompt an upgrade when it is older.
+
+**Do not** ship a fallback copy of these values that silently replaces a failed call. If
+`/config` is unreachable, say so and retry: guessing the limits is how the two drift apart.
+
+### 21.3 Kofi creates a member account
+
+*Kofi wants to submit a claim he saw on WhatsApp, so he needs an account.*
+
+```
+POST /api/v1/auth/register
+```
+
+```json
+{ "name": "Kofi Mensah",
+  "email_address": "kofi@example.com",
+  "password": "a-strong-password",
+  "password_confirmation": "a-strong-password" }
+```
+
+`201 Created`:
+
+```json
+{ "data": {
+  "token_type": "Bearer",
+  "access_token": "…", "refresh_token": "…",
+  "expires_in": 1800, "refresh_expires_in": 2592000,
+  "user": { "id": 42, "name": "Kofi Mensah", "role": "member",
+            "profile": { "organization": null, "phone": null, "region": null, "bio": null },
+            "abilities": ["marketplace.browse", "chat.use", "claims.create",
+                          "claims.submit", "claims.track"] }
+} }
+```
+
+**There is no email-verification step.** Registration signs Kofi in: the response already
+carries a usable pair, so go straight to the member home screen. Do not call `/auth/login`
+afterwards.
+
+**Only members self-register.** Fact-checkers arrive by invitation (§21.8), so the app
+needs no "sign up as a fact-checker" path.
+
+**Password rules,** worth enforcing in the form so Kofi finds out before the round trip:
+at least 8 characters, at most 72 bytes, and `password_confirmation` is **required** —
+omitting it is rejected rather than skipping the check.
+
+**When it fails,** the body names the field:
+
+```json
+{ "error": { "status": 422, "message": "Validation failed",
+             "details": { "email_address": ["has already been taken"] } } }
+```
+
+Map `details` onto the form fields. Every key is an attribute name and every value is a
+list of messages, so the shape is stable enough to render generically.
+
+### 21.4 Ama signs in, and the app works out where to send her
+
+*Ama already has an account. She may be a member or a fact-checker; the app does not know
+which until the server says so.*
+
+```
+POST /api/v1/auth/login
+{ "email_address": "ama@example.com", "password": "…" }
+```
+
+The `200` body is the same envelope as registration, and `data.user.role` is the routing
+decision:
+
+| `role` | Send them to |
+|---|---|
+| `member` | The member home: submit a claim, track claims, browse the marketplace |
+| `fact_checker` | The fact-checker home: assignment queue, verdicts |
+
+**Route on `role`, not on `abilities`.** `abilities` is a convenience for deciding which
+tabs and buttons to render; it is **not** an authorization mechanism. The server enforces
+every rule independently, so hiding a button is a courtesy to the user, not a security
+control, and forging the list gains nothing.
+
+**Three ways this fails, and they mean different things:**
+
+| Status | Meaning | What the app should show |
+|---|---|---|
+| `401` | Wrong email or password | "Try another email address or password." Stay on the form. |
+| `403` "…suspended…" | Correct password, account suspended | A dead end. Show the message; offer support contact, not a retry. |
+| `403` "Administrators sign in on the web portal." | Correct password, admin account | Point at the website. Do not offer a member screen. |
+
+Note that the password must already be correct before either `403` appears, so these
+cannot be used to discover whether an address has an account.
+
+### 21.5 Ama comes back the next morning
+
+*Ama used the app at 9am and opens it again at 2pm. Her access token expired hours ago.*
+
+The first authenticated call returns:
+
+```json
+{ "error": { "status": 401, "message": "Invalid or expired access token" } }
+```
+
+Do not sign her out. Refresh:
+
+```
+POST /api/v1/auth/refresh
+{ "refresh_token": "…" }
+```
+
+```json
+{ "data": { "token_type": "Bearer", "access_token": "…", "refresh_token": "…",
+            "expires_in": 1800, "refresh_expires_in": 2592000 } }
+```
+
+No `user` object comes back: the app already has it. **Store both new tokens and discard
+the old pair immediately** — the refresh token you just spent is already dead.
+
+**Build this as an interceptor,** not as a check on each screen: on any `401`, refresh once
+and replay the original request. If the refresh itself returns `401`, the session is
+genuinely over — clear the keychain and show the sign-in screen.
+
+**One trap worth designing around.** Refresh is single-use. If five requests fail with
+`401` at once and each fires its own refresh, the first succeeds and the rest present a
+spent token and get `401`, which will look like a broken session. **Single-flight the
+refresh:** the first caller refreshes, the others wait for it and replay with the new
+token.
+
+### 21.6 Ama forgets her password
+
+*Ama is locked out. She is on a phone, so an emailed link is unreliable: it may open on a
+laptop, or in a browser with no route back into the app.*
+
+The flow is a **6-digit code**, in two steps. Step one:
+
+```
+POST /api/v1/auth/password_resets
+{ "email_address": "ama@example.com" }
+```
+
+`202 Accepted`, always:
+
+```json
+{ "data": { "message": "If an account exists for that email address, a reset code is on its way." } }
+```
+
+**That response is identical whether or not the account exists**, deliberately, so the
+endpoint cannot be used to discover who has an account. The app cannot tell either: show
+the same "check your email" screen regardless, and never phrase it as confirmation that
+the address was found.
+
+Step two — Ama types the code and her new password on one screen:
+
+```
+PUT /api/v1/auth/password_resets/000000
+{ "reset_code": "482913",
+  "email_address": "ama@example.com",
+  "password": "her-new-password",
+  "password_confirmation": "her-new-password" }
+```
+
+**Send the code as `reset_code` in the body.** The URL segment still works and is still the
+published shape, but a code in a path is written verbatim into server and proxy access
+logs where it cannot be redacted. When `reset_code` is present it wins, so put any
+placeholder in the path.
+
+On success:
+
+```json
+{ "data": { "message": "Your password has been reset. Please sign in." } }
+```
+
+**No tokens come back.** That is deliberate: a reset exists to lock someone else out, so it
+destroys every session on every device and the app returns Ama to the sign-in screen. If
+she was signed in on a tablet, that session is gone too.
+
+The code **expires in 15 minutes**, works **once**, and dies after **five wrong attempts**.
+
+**Two failure shapes to handle differently:**
+
+- `422` — the password itself was rejected (too short, too long, confirmation mismatch).
+  **The code is not spent.** Let her fix the password and submit again with the same code.
+- `401` "That reset code is invalid or has expired." — wrong, expired, already used, or
+  five attempts burned. Send her back to step one for a fresh code.
+
+### 21.7 Kofi signs out
+
+```
+DELETE /api/v1/auth/logout
+Authorization: Bearer <access_token>
+```
+
+`204 No Content`. This destroys **only this device's** session; if Kofi is signed in on a
+tablet, that stays signed in.
+
+**Logout always succeeds** — `204` even for an expired, already-spent or malformed token,
+and even with no header at all. An app can never be stuck holding a credential it cannot
+discard. It accepts **either** token, so send whichever you have.
+
+Clear the keychain when the response arrives. If the request fails on the network, clear it
+anyway and move on: the token is short-lived, and the server-side row is cleaned up on
+expiry.
+
+### 21.8 Akosua the fact-checker signs in
+
+*Akosua has been accredited by Kasagadi. She never registered.*
+
+Fact-checkers are invited by an administrator and accept through the **web** (a 24-hour,
+single-use link, §6.2), which creates the account. From then on she uses the same
+`POST /auth/login` as everyone else, and `/me` returns:
+
+```json
+{ "data": { "role": "fact_checker",
+  "profile": { "organization": "FactCheck Ghana", "specialty": "Politics",
+               "phone": "0209876543", "region": "Ashanti", "bio": "…", "verified": true },
+  "abilities": ["marketplace.browse", "chat.use", "assignments.view", "assignments.start",
+                "assignments.reject", "verdicts.submit", "verdicts.edit"] } }
+```
+
+Note `profile` carries different keys per role — `specialty` and `verified` exist only for
+fact-checkers. Read it by role, not as a fixed shape.
+
+### 21.9 Kwame the administrator tries the app
+
+*Kwame runs the platform. He downloads the app and enters his working credentials.*
+
+He gets `403` and "Administrators sign in on the web portal." His password was correct;
+mobile simply is not for him. The app should show that message and link to the website,
+not offer a retry.
+
+This holds even if his account also has a member record, and it is re-checked on **every**
+request, not just at sign-in.
+
+### 21.10 Kofi's account is suspended while he is using it
+
+*A moderator suspends Kofi mid-session.*
+
+His tokens stop working immediately — suspension destroys every session, so the next call
+returns `401` and the refresh fails too. There is no grace period and no push notification.
+
+**Design for it:** a `401` where the refresh also fails is not a bug and not necessarily an
+expiry. Clear credentials, return to sign-in, and let his next sign-in attempt surface the
+real reason (`403` with the suspension message).
+
+The same applies if his role changes: an account promoted to administrator, or one that
+loses its member record, stops working mid-session by design.
+
+### 21.11 Kofi is on a bad network
+
+*Kofi is on 3G in Tamale. Requests time out; he taps twice.*
+
+- **Retrying `POST /auth/login`** is safe. It creates a second session rather than
+  replacing the first, which is fine — sessions are per device and cheap.
+- **Retrying `POST /auth/refresh` with the same token is not.** If the first attempt
+  reached the server, the token is spent and the retry returns `401`. Treat a timed-out
+  refresh as unknown, not failed: retry once, and on `401` re-authenticate rather than
+  looping.
+- **Double-tapping "Send code"** is safe. Each request replaces the previous code, so only
+  the most recent email works. If Kofi reads the older message, the code is rejected —
+  worth saying "use the most recent code" on the entry screen.
+- **Double-tapping "Register"** returns `422 has already been taken` on the second, not a
+  crash. Treat it as "you already have an account" rather than a hard error.
+
+**Rate limits** return `429`. Back off and show a plain message; do not retry in a tight
+loop.
+
+| Endpoint | Limit |
+|---|---|
+| `POST /auth/login` | 10 per 3 minutes, per email address |
+| `POST /auth/register` | 5 per hour, per email address |
+| `POST /auth/refresh` | 30 per minute, per refresh token |
+| `POST /auth/password_resets` | 5 per hour, per email address |
+| `PUT /auth/password_resets/:code` | 10 per 15 minutes, per email address |
+| Everything else | 300 per minute, per signed-in user |
+
+These are keyed by identity rather than by IP address on purpose: a large share of
+Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
+IP-keyed limit would have users locking each other out.
+
+### 21.12 Errors, in one shape
+
+Every failure uses the same envelope, so one parser covers the whole API:
+
+```json
+{ "error": { "status": 422, "message": "Validation failed",
+             "details": { "email_address": ["has already been taken"] } } }
+```
+
+`details` appears only on `422`, and maps attribute names to lists of messages. `message`
+is written for a person and can be shown as-is.
+
+| Status | Meaning | App behaviour |
+|---|---|---|
+| `400` | Malformed JSON body | A client bug. Log it; do not retry. |
+| `401` | Missing, expired or invalid token | Refresh once, then sign out. |
+| `403` | Valid credential, not allowed on mobile | Terminal. Show the message. |
+| `404` | No such record | Terminal for that screen. |
+| `422` | Validation failed | Render `details` against the form. |
+| `429` | Rate limited | Back off, show a plain message. |
+| `5xx` | Server fault | Retry with backoff; show a generic failure. |
+
+### 21.13 Checklist before the first build ships
+
+- [ ] Tokens are in the device keychain, never in plain preferences, and never logged.
+- [ ] A single-flight refresh interceptor handles `401` and replays the request once.
+- [ ] `role` from `/me` drives navigation; `abilities` only shows and hides controls.
+- [ ] Upload limits and vocabularies are read from `/config`, not hard-coded.
+- [ ] `min_supported_app_version` is checked on cold start.
+- [ ] The reset code is sent as `reset_code` in the body, not in the URL.
+- [ ] `403` on sign-in is a dead end with the server's message, not a retry loop.
+- [ ] `422` `details` are rendered per field.
+- [ ] Sign-out clears local credentials even when the request fails.
+- [ ] Nothing in the app contains a `kg_live_…` partner key.

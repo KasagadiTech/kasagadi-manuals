@@ -336,6 +336,7 @@
         <li><a href="#18-testing"><span class="toc-num">18</span> Testing</a></li>
         <li><a href="#19-glossary"><span class="toc-num">19</span> Glossary</a></li>
         <li><a href="#20-public-claims-api"><span class="toc-num">20</span> Public claims API</a></li>
+        <li><a href="#21-mobile-api-journeys"><span class="toc-num">21</span> Mobile API journeys</a></li>
       </ol>
     </aside>
 
@@ -1218,6 +1219,328 @@ allowlist (no PII, no internal columns).</p>
 <code>bin/rails &quot;api_key:issue[Partner Name]&quot;</code> prints the key <strong>once</strong> (store it immediately),
 <code>bin/rails api_key:list</code> shows all keys and usage, and <code>bin/rails &quot;api_key:revoke[ID]&quot;</code>
 disables one.</p>
+      </section>
+
+      <section>
+<h2 id="21-mobile-api-journeys"><span class="h2-num">21</span> Mobile API journeys</h2>
+<p>Written for the mobile team. The <a href="api.html">Swagger reference</a> says what each endpoint
+accepts and returns; this section says <strong>when to call it, in what order, and what to do
+with the answer</strong>. Each journey follows one person through one task.</p>
+<ul><li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li><li><strong>Credential:</strong> an access token from <code>POST /auth/login</code>, sent as <code>Authorization: Bearer &lt;access_token&gt;</code>. The app ships <strong>no</strong> API key. The partner key described in §20 is a different credential for a different audience: never put one in the app.</li><li><strong>Two roles reach the app:</strong> members of the public, and accredited fact-checkers. Administrators are refused and told to use the web portal.</li></ul>
+<h3 id="21-1-the-two-tokens-in-one-paragraph">21.1 The two tokens, in one paragraph</h3>
+<p>Signing in returns a pair. The <strong>access token</strong> rides on every request and lasts
+<strong>30 minutes</strong>. The <strong>refresh token</strong> does nothing but buy a new pair, and lasts
+<strong>30 days</strong>. Spending a refresh token invalidates it and issues a new one, so the app
+always holds exactly one live pair. Store both in the device keychain, never in plain
+preferences, and never write either into a log.</p>
+<table>
+<thead><tr>
+<th></th>
+<th>Lifetime</th>
+<th>Used for</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>access_token</code></td>
+<td>30 minutes</td>
+<td>Every authenticated request</td>
+</tr>
+<tr>
+<td><code>refresh_token</code></td>
+<td>30 days, rolling</td>
+<td>Only <code>POST /auth/refresh</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="21-2-kofi-opens-the-app-for-the-first-time">21.2 Kofi opens the app for the first time</h3>
+<p><em>Kofi has just installed Kasagadi. He hasn't signed in and hasn't tapped anything.</em></p>
+<p>Before the login screen renders, fetch the configuration. It needs no credential.</p>
+<pre><code>GET /api/v1/config</code></pre>
+<pre><code class="language-json">{ "data": {
+  "api_version": "v1",
+  "min_supported_app_version": "1.0.0",
+  "uploads": {
+    "evidence": { "max_bytes": 10485760, "content_types": ["image/jpeg", "…"],
+                  "formats_label": "JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG" },
+    "avatar":   { "max_bytes": 5242880, "content_types": ["image/png", "image/jpeg", "image/webp"] }
+  },
+  "claim_statuses": ["draft", "pending_assignment", "in_progress", "published", "unpublished"],
+  "verdicts": ["verdict_true", "verdict_false", "misleading", "partly_true", "unverifiable"],
+  "assignment_statuses": ["pending", "in_progress", "completed", "rejected"],
+  "links": { "privacy_policy": "https://…/privacy", "terms": "https://…/terms", "cookies": "https://…/cookies" }
+} }</code></pre>
+<p><strong>What the app does with it.</strong> Cache it on disk and refresh on each cold start. Drive the
+file picker from <code>uploads.evidence</code> rather than hard-coding "10MB" — server limits can
+change, and a hard-coded copy will drift and reject files the server would accept, or
+accept files it rejects. Render verdict and status labels from these lists so a new verdict
+type does not require an app release. Compare the running build against
+<code>min_supported_app_version</code> and prompt an upgrade when it is older.</p>
+<p><strong>Do not</strong> ship a fallback copy of these values that silently replaces a failed call. If
+<code>/config</code> is unreachable, say so and retry: guessing the limits is how the two drift apart.</p>
+<h3 id="21-3-kofi-creates-a-member-account">21.3 Kofi creates a member account</h3>
+<p><em>Kofi wants to submit a claim he saw on WhatsApp, so he needs an account.</em></p>
+<pre><code>POST /api/v1/auth/register</code></pre>
+<pre><code class="language-json">{ "name": "Kofi Mensah",
+  "email_address": "kofi@example.com",
+  "password": "a-strong-password",
+  "password_confirmation": "a-strong-password" }</code></pre>
+<p><code>201 Created</code>:</p>
+<pre><code class="language-json">{ "data": {
+  "token_type": "Bearer",
+  "access_token": "…", "refresh_token": "…",
+  "expires_in": 1800, "refresh_expires_in": 2592000,
+  "user": { "id": 42, "name": "Kofi Mensah", "role": "member",
+            "profile": { "organization": null, "phone": null, "region": null, "bio": null },
+            "abilities": ["marketplace.browse", "chat.use", "claims.create",
+                          "claims.submit", "claims.track"] }
+} }</code></pre>
+<p><strong>There is no email-verification step.</strong> Registration signs Kofi in: the response already
+carries a usable pair, so go straight to the member home screen. Do not call <code>/auth/login</code>
+afterwards.</p>
+<p><strong>Only members self-register.</strong> Fact-checkers arrive by invitation (§21.8), so the app
+needs no "sign up as a fact-checker" path.</p>
+<p><strong>Password rules,</strong> worth enforcing in the form so Kofi finds out before the round trip:
+at least 8 characters, at most 72 bytes, and <code>password_confirmation</code> is <strong>required</strong> —
+omitting it is rejected rather than skipping the check.</p>
+<p><strong>When it fails,</strong> the body names the field:</p>
+<pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
+             "details": { "email_address": ["has already been taken"] } } }</code></pre>
+<p>Map <code>details</code> onto the form fields. Every key is an attribute name and every value is a
+list of messages, so the shape is stable enough to render generically.</p>
+<h3 id="21-4-ama-signs-in-and-the-app-works-out-where-to-send-her">21.4 Ama signs in, and the app works out where to send her</h3>
+<p><em>Ama already has an account. She may be a member or a fact-checker; the app does not know
+which until the server says so.</em></p>
+<pre><code>POST /api/v1/auth/login
+{ "email_address": "ama@example.com", "password": "…" }</code></pre>
+<p>The <code>200</code> body is the same envelope as registration, and <code>data.user.role</code> is the routing
+decision:</p>
+<table>
+<thead><tr>
+<th><code>role</code></th>
+<th>Send them to</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>member</code></td>
+<td>The member home: submit a claim, track claims, browse the marketplace</td>
+</tr>
+<tr>
+<td><code>fact_checker</code></td>
+<td>The fact-checker home: assignment queue, verdicts</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Route on <code>role</code>, not on <code>abilities</code>.</strong> <code>abilities</code> is a convenience for deciding which
+tabs and buttons to render; it is <strong>not</strong> an authorization mechanism. The server enforces
+every rule independently, so hiding a button is a courtesy to the user, not a security
+control, and forging the list gains nothing.</p>
+<p><strong>Three ways this fails, and they mean different things:</strong></p>
+<table>
+<thead><tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>What the app should show</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>401</code></td>
+<td>Wrong email or password</td>
+<td>"Try another email address or password." Stay on the form.</td>
+</tr>
+<tr>
+<td><code>403</code> "…suspended…"</td>
+<td>Correct password, account suspended</td>
+<td>A dead end. Show the message; offer support contact, not a retry.</td>
+</tr>
+<tr>
+<td><code>403</code> "Administrators sign in on the web portal."</td>
+<td>Correct password, admin account</td>
+<td>Point at the website. Do not offer a member screen.</td>
+</tr>
+</tbody>
+</table>
+<p>Note that the password must already be correct before either <code>403</code> appears, so these
+cannot be used to discover whether an address has an account.</p>
+<h3 id="21-5-ama-comes-back-the-next-morning">21.5 Ama comes back the next morning</h3>
+<p><em>Ama used the app at 9am and opens it again at 2pm. Her access token expired hours ago.</em></p>
+<p>The first authenticated call returns:</p>
+<pre><code class="language-json">{ "error": { "status": 401, "message": "Invalid or expired access token" } }</code></pre>
+<p>Do not sign her out. Refresh:</p>
+<pre><code>POST /api/v1/auth/refresh
+{ "refresh_token": "…" }</code></pre>
+<pre><code class="language-json">{ "data": { "token_type": "Bearer", "access_token": "…", "refresh_token": "…",
+            "expires_in": 1800, "refresh_expires_in": 2592000 } }</code></pre>
+<p>No <code>user</code> object comes back: the app already has it. <strong>Store both new tokens and discard
+the old pair immediately</strong> — the refresh token you just spent is already dead.</p>
+<p><strong>Build this as an interceptor,</strong> not as a check on each screen: on any <code>401</code>, refresh once
+and replay the original request. If the refresh itself returns <code>401</code>, the session is
+genuinely over — clear the keychain and show the sign-in screen.</p>
+<p><strong>One trap worth designing around.</strong> Refresh is single-use. If five requests fail with
+<code>401</code> at once and each fires its own refresh, the first succeeds and the rest present a
+spent token and get <code>401</code>, which will look like a broken session. <strong>Single-flight the
+refresh:</strong> the first caller refreshes, the others wait for it and replay with the new
+token.</p>
+<h3 id="21-6-ama-forgets-her-password">21.6 Ama forgets her password</h3>
+<p><em>Ama is locked out. She is on a phone, so an emailed link is unreliable: it may open on a
+laptop, or in a browser with no route back into the app.</em></p>
+<p>The flow is a <strong>6-digit code</strong>, in two steps. Step one:</p>
+<pre><code>POST /api/v1/auth/password_resets
+{ "email_address": "ama@example.com" }</code></pre>
+<p><code>202 Accepted</code>, always:</p>
+<pre><code class="language-json">{ "data": { "message": "If an account exists for that email address, a reset code is on its way." } }</code></pre>
+<p><strong>That response is identical whether or not the account exists</strong>, deliberately, so the
+endpoint cannot be used to discover who has an account. The app cannot tell either: show
+the same "check your email" screen regardless, and never phrase it as confirmation that
+the address was found.</p>
+<p>Step two — Ama types the code and her new password on one screen:</p>
+<pre><code>PUT /api/v1/auth/password_resets/000000
+{ "reset_code": "482913",
+  "email_address": "ama@example.com",
+  "password": "her-new-password",
+  "password_confirmation": "her-new-password" }</code></pre>
+<p><strong>Send the code as <code>reset_code</code> in the body.</strong> The URL segment still works and is still the
+published shape, but a code in a path is written verbatim into server and proxy access
+logs where it cannot be redacted. When <code>reset_code</code> is present it wins, so put any
+placeholder in the path.</p>
+<p>On success:</p>
+<pre><code class="language-json">{ "data": { "message": "Your password has been reset. Please sign in." } }</code></pre>
+<p><strong>No tokens come back.</strong> That is deliberate: a reset exists to lock someone else out, so it
+destroys every session on every device and the app returns Ama to the sign-in screen. If
+she was signed in on a tablet, that session is gone too.</p>
+<p>The code <strong>expires in 15 minutes</strong>, works <strong>once</strong>, and dies after <strong>five wrong attempts</strong>.</p>
+<p><strong>Two failure shapes to handle differently:</strong></p>
+<ul><li><code>422</code> — the password itself was rejected (too short, too long, confirmation mismatch). <strong>The code is not spent.</strong> Let her fix the password and submit again with the same code.</li><li><code>401</code> "That reset code is invalid or has expired." — wrong, expired, already used, or five attempts burned. Send her back to step one for a fresh code.</li></ul>
+<h3 id="21-7-kofi-signs-out">21.7 Kofi signs out</h3>
+<pre><code>DELETE /api/v1/auth/logout
+Authorization: Bearer &lt;access_token&gt;</code></pre>
+<p><code>204 No Content</code>. This destroys <strong>only this device's</strong> session; if Kofi is signed in on a
+tablet, that stays signed in.</p>
+<p><strong>Logout always succeeds</strong> — <code>204</code> even for an expired, already-spent or malformed token,
+and even with no header at all. An app can never be stuck holding a credential it cannot
+discard. It accepts <strong>either</strong> token, so send whichever you have.</p>
+<p>Clear the keychain when the response arrives. If the request fails on the network, clear it
+anyway and move on: the token is short-lived, and the server-side row is cleaned up on
+expiry.</p>
+<h3 id="21-8-akosua-the-fact-checker-signs-in">21.8 Akosua the fact-checker signs in</h3>
+<p><em>Akosua has been accredited by Kasagadi. She never registered.</em></p>
+<p>Fact-checkers are invited by an administrator and accept through the <strong>web</strong> (a 24-hour,
+single-use link, §6.2), which creates the account. From then on she uses the same
+<code>POST /auth/login</code> as everyone else, and <code>/me</code> returns:</p>
+<pre><code class="language-json">{ "data": { "role": "fact_checker",
+  "profile": { "organization": "FactCheck Ghana", "specialty": "Politics",
+               "phone": "0209876543", "region": "Ashanti", "bio": "…", "verified": true },
+  "abilities": ["marketplace.browse", "chat.use", "assignments.view", "assignments.start",
+                "assignments.reject", "verdicts.submit", "verdicts.edit"] } }</code></pre>
+<p>Note <code>profile</code> carries different keys per role — <code>specialty</code> and <code>verified</code> exist only for
+fact-checkers. Read it by role, not as a fixed shape.</p>
+<h3 id="21-9-kwame-the-administrator-tries-the-app">21.9 Kwame the administrator tries the app</h3>
+<p><em>Kwame runs the platform. He downloads the app and enters his working credentials.</em></p>
+<p>He gets <code>403</code> and "Administrators sign in on the web portal." His password was correct;
+mobile simply is not for him. The app should show that message and link to the website,
+not offer a retry.</p>
+<p>This holds even if his account also has a member record, and it is re-checked on <strong>every</strong>
+request, not just at sign-in.</p>
+<h3 id="21-10-kofi-s-account-is-suspended-while-he-is-using-it">21.10 Kofi's account is suspended while he is using it</h3>
+<p><em>A moderator suspends Kofi mid-session.</em></p>
+<p>His tokens stop working immediately — suspension destroys every session, so the next call
+returns <code>401</code> and the refresh fails too. There is no grace period and no push notification.</p>
+<p><strong>Design for it:</strong> a <code>401</code> where the refresh also fails is not a bug and not necessarily an
+expiry. Clear credentials, return to sign-in, and let his next sign-in attempt surface the
+real reason (<code>403</code> with the suspension message).</p>
+<p>The same applies if his role changes: an account promoted to administrator, or one that
+loses its member record, stops working mid-session by design.</p>
+<h3 id="21-11-kofi-is-on-a-bad-network">21.11 Kofi is on a bad network</h3>
+<p><em>Kofi is on 3G in Tamale. Requests time out; he taps twice.</em></p>
+<ul><li><strong>Retrying <code>POST /auth/login</code></strong> is safe. It creates a second session rather than replacing the first, which is fine — sessions are per device and cheap.</li><li><strong>Retrying <code>POST /auth/refresh</code> with the same token is not.</strong> If the first attempt reached the server, the token is spent and the retry returns <code>401</code>. Treat a timed-out refresh as unknown, not failed: retry once, and on <code>401</code> re-authenticate rather than looping.</li><li><strong>Double-tapping "Send code"</strong> is safe. Each request replaces the previous code, so only the most recent email works. If Kofi reads the older message, the code is rejected — worth saying "use the most recent code" on the entry screen.</li><li><strong>Double-tapping "Register"</strong> returns <code>422 has already been taken</code> on the second, not a crash. Treat it as "you already have an account" rather than a hard error.</li></ul>
+<p><strong>Rate limits</strong> return <code>429</code>. Back off and show a plain message; do not retry in a tight
+loop.</p>
+<table>
+<thead><tr>
+<th>Endpoint</th>
+<th>Limit</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>POST /auth/login</code></td>
+<td>10 per 3 minutes, per email address</td>
+</tr>
+<tr>
+<td><code>POST /auth/register</code></td>
+<td>5 per hour, per email address</td>
+</tr>
+<tr>
+<td><code>POST /auth/refresh</code></td>
+<td>30 per minute, per refresh token</td>
+</tr>
+<tr>
+<td><code>POST /auth/password_resets</code></td>
+<td>5 per hour, per email address</td>
+</tr>
+<tr>
+<td><code>PUT /auth/password_resets/:code</code></td>
+<td>10 per 15 minutes, per email address</td>
+</tr>
+<tr>
+<td>Everything else</td>
+<td>300 per minute, per signed-in user</td>
+</tr>
+</tbody>
+</table>
+<p>These are keyed by identity rather than by IP address on purpose: a large share of
+Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
+IP-keyed limit would have users locking each other out.</p>
+<h3 id="21-12-errors-in-one-shape">21.12 Errors, in one shape</h3>
+<p>Every failure uses the same envelope, so one parser covers the whole API:</p>
+<pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
+             "details": { "email_address": ["has already been taken"] } } }</code></pre>
+<p><code>details</code> appears only on <code>422</code>, and maps attribute names to lists of messages. <code>message</code>
+is written for a person and can be shown as-is.</p>
+<table>
+<thead><tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>App behaviour</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>400</code></td>
+<td>Malformed JSON body</td>
+<td>A client bug. Log it; do not retry.</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Missing, expired or invalid token</td>
+<td>Refresh once, then sign out.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Valid credential, not allowed on mobile</td>
+<td>Terminal. Show the message.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>No such record</td>
+<td>Terminal for that screen.</td>
+</tr>
+<tr>
+<td><code>422</code></td>
+<td>Validation failed</td>
+<td>Render <code>details</code> against the form.</td>
+</tr>
+<tr>
+<td><code>429</code></td>
+<td>Rate limited</td>
+<td>Back off, show a plain message.</td>
+</tr>
+<tr>
+<td><code>5xx</code></td>
+<td>Server fault</td>
+<td>Retry with backoff; show a generic failure.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="21-13-checklist-before-the-first-build-ships">21.13 Checklist before the first build ships</h3>
+<ul class="checklist"><li><input type="checkbox" disabled> Tokens are in the device keychain, never in plain preferences, and never logged.</li><li><input type="checkbox" disabled> A single-flight refresh interceptor handles <code>401</code> and replays the request once.</li><li><input type="checkbox" disabled> <code>role</code> from <code>/me</code> drives navigation; <code>abilities</code> only shows and hides controls.</li><li><input type="checkbox" disabled> Upload limits and vocabularies are read from <code>/config</code>, not hard-coded.</li><li><input type="checkbox" disabled> <code>min_supported_app_version</code> is checked on cold start.</li><li><input type="checkbox" disabled> The reset code is sent as <code>reset_code</code> in the body, not in the URL.</li><li><input type="checkbox" disabled> <code>403</code> on sign-in is a dead end with the server's message, not a retry loop.</li><li><input type="checkbox" disabled> <code>422</code> <code>details</code> are rendered per field.</li><li><input type="checkbox" disabled> Sign-out clears local credentials even when the request fails.</li><li><input type="checkbox" disabled> Nothing in the app contains a <code>kg_live_…</code> partner key.</li></ul>
       </section>
     </article>
 
