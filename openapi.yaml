@@ -244,6 +244,8 @@ paths:
                   data: { $ref: "#/components/schemas/User" }
         "401":
           $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -257,7 +259,10 @@ paths:
         usable token pair. Fact-checker accounts are not self-registered; they
         arrive by invitation.
 
-        Rate limited to 5 per hour per IP.
+        Rate limited to 5 per hour per email address and IP together, with a
+        looser 60 per hour per IP behind it. Keyed this way because much of Ghana
+        reaches the internet through a small number of carrier NAT addresses, and
+        a bare per-IP cap would cut off a whole network.
       operationId: register
       security: []
       requestBody:
@@ -270,8 +275,16 @@ paths:
               properties:
                 name: { type: string, example: "Ama Owusu" }
                 email_address: { type: string, format: email, example: "ama@example.com" }
-                password: { type: string, format: password, minLength: 1, maxLength: 72 }
-                password_confirmation: { type: string, format: password }
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  maxLength: 72
+                  description: "At least 8 characters. bcrypt caps the input at 72 bytes."
+                password_confirmation:
+                  type: string
+                  format: password
+                  description: "Required. Omitting it is rejected rather than skipping the check."
       responses:
         "201":
           description: Account created and signed in.
@@ -355,7 +368,13 @@ paths:
 
         The response omits `user`, which the client already holds.
 
-        Rate limited to 30 per minute per IP.
+        Eligibility is re-checked here, not just at sign-in: an account that
+        becomes an administrator, or loses its member record, stops being able to
+        renew and receives `403`.
+
+        Rate limited to 30 per minute **per refresh token**, with a 600 per minute
+        per-IP backstop. Keyed by token because this is the busiest endpoint in the
+        app and carrier NAT would otherwise have users locking each other out.
       operationId: refresh
       security: []
       requestBody:
@@ -383,6 +402,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               example: { error: { status: 401, message: "That refresh token is invalid or has expired." } }
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -394,9 +415,14 @@ paths:
         Destroys only the session behind the presented token; the account stays
         signed in on its other devices.
 
-        Always returns `204`, even for an expired, already-rotated or malformed
-        token. Signing out must never fail, or a client is left holding a token
-        it cannot discard.
+        Accepts **either** the access token or the refresh token, and revokes
+        regardless of whether the access token has already expired. Since access
+        tokens last 30 minutes, signing out after a break is the ordinary case;
+        the session and its refresh token are destroyed either way.
+
+        Always returns `204`, even for an already-revoked or malformed token.
+        Signing out must never fail, or a client is left holding a token it cannot
+        discard.
       operationId: logout
       security:
         - mobileAccessToken: []
@@ -417,7 +443,8 @@ paths:
         A code is used rather than a link so no deep-link setup is needed, and so
         a mail opened on a different device still works.
 
-        Rate limited to 5 per hour per email address.
+        Rate limited to 5 per hour per email address, plus 30 per hour per IP so
+        one host cannot walk a list of addresses and mail all of them.
       operationId: requestPasswordReset
       security: []
       requestBody:
@@ -458,11 +485,16 @@ paths:
         No tokens are returned: the app sends the person back to the sign-in
         screen, so a stolen code cannot also hand over a session.
 
-        The new password is validated **before** the code is spent, so a typo in
-        the confirmation costs a retry rather than a whole new code. A wrong code
-        counts an attempt; the fifth wrong attempt destroys the code.
+        The new password is validated **before** the account is even looked up, so
+        a typo costs a retry rather than a whole new code. That ordering also
+        matters for privacy: validating afterwards would mean a `422` could only
+        come back for an address that existed, turning one request into an account
+        oracle. Every rejection here is independent of whether the account exists.
 
-        Rate limited to 10 per 15 minutes per IP.
+        A wrong code counts an attempt; the fifth wrong attempt destroys the code.
+
+        Rate limited to 10 per 15 minutes per email address, with a 100 per 15
+        minutes per-IP backstop.
       operationId: completePasswordReset
       security: []
       parameters:
@@ -481,7 +513,11 @@ paths:
               required: [email_address, password, password_confirmation]
               properties:
                 email_address: { type: string, format: email }
-                password: { type: string, format: password }
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  maxLength: 72
                 password_confirmation: { type: string, format: password }
       responses:
         "200":
@@ -540,6 +576,25 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           example: { error: { status: 401, message: "Invalid or expired access token" } }
+    NoMobileAccess:
+      description: |
+        The credential is valid, but the account may not use the mobile app: it is
+        an administrator, or it holds no member or fact-checker role. Re-checked on
+        every request, so this can appear after a role changes mid-session.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            administrator:
+              value: { error: { status: 403, message: "Administrators sign in on the web portal." } }
+            noRole:
+              value: { error: { status: 403, message: "This account does not have mobile access." } }
+    MalformedJson:
+      description: The request body was not valid JSON.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 400, message: "Malformed JSON in request body" } }
     ValidationFailed:
       description: The submitted fields were rejected. `details` names each one.
       content:
