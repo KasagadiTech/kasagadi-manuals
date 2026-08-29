@@ -1893,7 +1893,7 @@ components:
               message: "Validation failed"
               details: { email_address: ["has already been taken"] }
     RateLimited:
-      description: Too many requests — slow down.
+      description: Too many requests. Slow down.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

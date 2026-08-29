@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kasagadi AI — System Manual</title>
-  <meta name="description" content="System manual for the Kasagadi AI fact-checking platform — actors, lifecycle, authentication, codebase, and more.">
+  <title>Kasagadi AI System Manual</title>
+  <meta name="description" content="The full system manual for the Kasagadi AI fact-checking platform, covering how a claim moves from submission to published verdict, who is accountable at each step, and how the codebase is laid out.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -372,7 +372,7 @@ visibility, the audit trail, and platform analytics.</p>
 
 <p>The platform is built so that the journey from &quot;I saw a suspicious headline&quot; to &quot;here is a
 verified verdict with evidence and a research trail&quot; lives in one <strong>auditable, accountable</strong>
-system — every consequential action is attributed to a person and recorded.</p>
+system: every consequential action is attributed to a person and recorded.</p>
       </section>
 
       <hr class="divider">
@@ -432,78 +432,78 @@ and authorization.</p>
 <tr>
 <td>Submit a claim</td>
 <td style="text-align: center">✅</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 </tr>
 <tr>
 <td>Assign / reassign a fact checker</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
 <td>Submit a verdict</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 </tr>
 <tr>
 <td>Publish / unpublish a claim</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">owner only</td>
 <td style="text-align: center">owner only</td>
 </tr>
 <tr>
 <td>Transfer claim ownership</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">owner only</td>
 <td style="text-align: center">owner only</td>
 </tr>
 <tr>
 <td>Invite a fact checker</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
 <td>Invite an admin</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
 <td>Suspend / reactivate an account</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
 <td>Reset an account&#39;s password</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
 <td>See drafts / every claim</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 </tr>
 <tr>
 <td>View the audit log</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
-<td style="text-align: center">—</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
+<td style="text-align: center">❌</td>
 <td style="text-align: center">✅</td>
 </tr>
 </tbody></table>
@@ -511,7 +511,7 @@ and authorization.</p>
 <blockquote>
 <p><strong>Key accountability rule:</strong> a claim has exactly <strong>one owner admin</strong> at a time, and only
 that admin can publish, unpublish, republish, or transfer it. The Super Admin has full
-<em>visibility</em> but does <strong>not</strong> override ownership — their oversight role grants no publish
+<em>visibility</em> but does <strong>not</strong> override ownership. Their oversight role grants no publish
 power over claims they don&#39;t own.</p>
 </blockquote>
       </section>
@@ -543,24 +543,24 @@ model. The transitions and who triggers them:</p>
 <p>State-by-state:</p>
 
 <ul>
-<li><strong>draft</strong> — the member is composing the claim. Validations on title/content/source/
+<li><strong>draft</strong>: the member is composing the claim. Validations on title/content/source/
 topic/region are skipped while drafting (<code>Claim#skip_presence_validation?</code>). Drafts are
 private to the member; only the Super Admin can also see them.</li>
-<li><strong>pending_assignment</strong> — submitted to the platform, waiting for an admin to assign a fact
+<li><strong>pending_assignment</strong>: submitted to the platform, waiting for an admin to assign a fact
 checker. Has <strong>no owner yet</strong>.</li>
-<li><strong>in_progress</strong> — a <code>FactChecker</code> has been assigned. The assigning admin becomes the
+<li><strong>in_progress</strong>: a <code>FactChecker</code> has been assigned. The assigning admin becomes the
 <strong>owner</strong> (<code>claim.owner_admin</code>). The <code>Assignment</code> row tracks the due date, admin notes,
 and its own status (<code>pending → in_progress → completed / rejected</code>).</li>
-<li><strong>published</strong> — the owner admin approved the verification; the claim is live on the public
+<li><strong>published</strong>: the owner admin approved the verification; the claim is live on the public
 marketplace and <code>verification.published_at</code> is stamped with the approval time.</li>
-<li><strong>unpublished</strong> — the owner admin hid a previously published claim from the public and
+<li><strong>unpublished</strong>: the owner admin hid a previously published claim from the public and
 members. <code>republish</code> restores it (and keeps the original publish date).</li>
 </ul>
 
 <p>The state machine lives in <a href="https://github.com/KasagadiTech/kasagandi_platform/blob/main/app/models/claim.rb"><code>app/models/claim.rb</code></a>.</p>
 
 <blockquote>
-<p><strong>Note:</strong> earlier versions used an <code>is_archived</code> boolean. That no longer exists — hiding a
+<p><strong>Note:</strong> earlier versions used an <code>is_archived</code> boolean. That no longer exists. Hiding a
 claim is the <code>unpublished</code> <strong>state</strong> reached via the <code>unpublish</code> event, and restoring it is
 <code>republish</code>.</p>
 </blockquote>
@@ -571,11 +571,11 @@ claim is the <code>unpublished</code> <strong>state</strong> reached via the <co
 Verification rows. These power the UI badges:</p>
 
 <ul>
-<li><code>awaiting_review?</code> — <code>in_progress</code> with a <code>pending</code> assignment (checker hasn&#39;t started)</li>
-<li><code>under_review?</code> — <code>in_progress</code> with an <code>in_progress</code> assignment (actively worked)</li>
-<li><code>awaiting_approval?</code> — <code>in_progress</code> with a verification submitted (waiting for the owner
+<li><code>awaiting_review?</code>: <code>in_progress</code> with a <code>pending</code> assignment (checker hasn&#39;t started)</li>
+<li><code>under_review?</code>: <code>in_progress</code> with an <code>in_progress</code> assignment (actively worked)</li>
+<li><code>awaiting_approval?</code>: <code>in_progress</code> with a verification submitted (waiting for the owner
 admin to approve)</li>
-<li><code>owned_by?(admin)</code> / <code>publishable_by?(admin)</code> — true only for the claim&#39;s owner admin</li>
+<li><code>owned_by?(admin)</code> / <code>publishable_by?(admin)</code>: true only for the claim&#39;s owner admin</li>
 </ul>
       </section>
 
@@ -592,12 +592,12 @@ admin to approve)</li>
 becomes <code>owner_admin</code>. Reassigning to a different checker does <strong>not</strong> change ownership.</li>
 <li><strong>Who can publish:</strong> only the owner admin can run <code>approve</code> (publish), <code>unpublish</code>, or
 <code>republish</code>. The button is hidden for other admins, and the controller rejects the action
-server-side — so it can&#39;t be forced via a crafted request. Non-owners see an &quot;Owned by …&quot;
+server-side, so it can&#39;t be forced via a crafted request. Non-owners see an &quot;Owned by …&quot;
 context instead.</li>
 <li><strong>Transfer:</strong> the owner admin can hand a claim to another <strong>active</strong> admin. The transfer
 is recorded in the audit log (<code>from_admin_id</code> → <code>to_admin_id</code>). Transferring to a suspended
 admin is blocked (they could never publish, which would orphan the claim).</li>
-<li><strong>Awaiting approval:</strong> the owner&#39;s dashboard surfaces an &quot;Awaiting your approval&quot; list —
+<li><strong>Awaiting approval:</strong> the owner&#39;s dashboard surfaces an &quot;Awaiting your approval&quot; list of
 claims they own whose fact checker has submitted a verdict. It previews the most recent 8
 with a &quot;View all&quot; link to the owner-scoped claims view.</li>
 </ul>
@@ -613,15 +613,15 @@ fact checker, and the assigned / completed / published dates.</p>
 
 
 <ul>
-<li><strong>Evidence</strong> — many per claim. Description plus optional file attachments (images, videos,
+<li><strong>Evidence</strong>: many per claim. Description plus optional file attachments (images, videos,
 PDFs via Active Storage). Members add evidence when submitting.</li>
-<li><strong>Assignment</strong> — one per claim. Tracks the fact checker, the assigning admin
+<li><strong>Assignment</strong>: one per claim. Tracks the fact checker, the assigning admin
 (<code>assigned_by</code>), due date, notes, and status. Notifies the fact checker on creation and on
 a fact-checker swap, not on same-checker re-saves, and never for an imported claim (§14).</li>
-<li><strong>Verification</strong> — one per claim. The fact checker&#39;s verdict (<code>true</code>, <code>false</code>,
+<li><strong>Verification</strong>: one per claim. The fact checker&#39;s verdict (<code>true</code>, <code>false</code>,
 <code>misleading</code>, <code>partly_true</code>, <code>unverifiable</code>), summary, research write-up, reference link,
-and <code>published_at</code> (stamped when the owner admin approves — <em>not</em> at verdict submission).</li>
-<li><strong>AuditLog</strong> — an immutable, append-only event record. One row per consequential action:
+and <code>published_at</code> (stamped when the owner admin approves, <em>not</em> at verdict submission).</li>
+<li><strong>AuditLog</strong>: an immutable, append-only event record. One row per consequential action:
 who did it (<code>actor</code>), what (<code>action</code>), to which record (polymorphic <code>auditable</code>), and
 metadata. See §9.</li>
 </ul>
@@ -638,7 +638,7 @@ metadata. See §9.</li>
 <ol>
 <li>Signs up at <code>/registration/new</code> → a <code>User</code> + <code>Member</code> are created, signed in, landed on
 <code>/members/dashboard</code>.</li>
-<li><code>/members/claims/new</code> — fills title, content, source, <strong>one or more optional source links</strong>, topic, region, and zero or more
+<li><code>/members/claims/new</code>: fills title, content, source, <strong>one or more optional source links</strong>, topic, region, and zero or more
 evidence rows.</li>
 <li><strong>Submit</strong> runs the <code>submit</code> event → <code>pending_assignment</code> (validated). <strong>Save draft</strong>
 keeps it as <code>draft</code> with relaxed validation.</li>
@@ -659,11 +659,11 @@ breakdown, and <strong>recent verdicts ordered by submission time</strong>.</li>
 <li>Three actions:
 
 <ul>
-<li><strong>Start review</strong> — assignment <code>pending → in_progress</code> (claim stays <code>in_progress</code>).</li>
-<li><strong>Reject assignment</strong> — claim back to <code>pending_assignment</code>, assignment marked
+<li><strong>Start review</strong>: assignment <code>pending → in_progress</code> (claim stays <code>in_progress</code>).</li>
+<li><strong>Reject assignment</strong>: claim back to <code>pending_assignment</code>, assignment marked
 <code>rejected</code>; writes a <code>rejected</code> audit entry. Wrapped in a transaction.</li>
-<li><strong>Submit verdict</strong> — creates the <code>Verification</code>, marks the assignment <code>completed</code>, and
-writes a <code>completed</code> audit entry. The claim is now <em>awaiting approval</em> — the owner admin
+<li><strong>Submit verdict</strong>: creates the <code>Verification</code>, marks the assignment <code>completed</code>, and
+writes a <code>completed</code> audit entry. The claim is now <em>awaiting approval</em>. The owner admin
 still has to publish.</li>
 </ul></li>
 <li>Fact checkers never publish, assign, transfer, or change ownership. A <strong>suspended</strong> fact
@@ -673,20 +673,20 @@ checker can&#39;t sign in, and can&#39;t be assigned new claims.</li>
 <h3>6.3 Admin</h3>
 
 <ol>
-<li>Signs in at <code>/session/new</code> (no public admin sign-up — admins are invited by the Super
+<li>Signs in at <code>/session/new</code> (no public admin sign-up: admins are invited by the Super
 Admin).</li>
 <li>Lands on <code>/admins/dashboard</code>, which includes an <strong>&quot;Awaiting your approval&quot;</strong> section for
 claims they own.</li>
 <li>From <code>/admins/claims</code> they filter by status/topic/region, search, and open a claim:
 
 <ul>
-<li><strong>Assign / reassign</strong> — pick a fact checker (suspended ones are not offered), set a due
+<li><strong>Assign / reassign</strong>: pick a fact checker (suspended ones are not offered), set a due
 date and notes. First assignment makes the admin the <strong>owner</strong> and writes an <code>assigned</code>
 audit entry.</li>
-<li><strong>Approve &amp; publish</strong> (owner only) — runs <code>approve</code>, stamps <code>published_at</code>, writes a
+<li><strong>Approve &amp; publish</strong> (owner only): runs <code>approve</code>, stamps <code>published_at</code>, writes a
 <code>published</code> audit entry, and emails the member. Only shown once a verdict exists.</li>
-<li><strong>Unpublish / Republish</strong> (owner only) — hides/restores the claim; audited.</li>
-<li><strong>Transfer ownership</strong> (owner only) — hand the claim to another active admin; audited.</li>
+<li><strong>Unpublish / Republish</strong> (owner only): hides/restores the claim; audited.</li>
+<li><strong>Transfer ownership</strong> (owner only): hand the claim to another active admin; audited.</li>
 </ul></li>
 <li>From <code>/admins/invitations</code> an admin can invite <strong>fact checkers</strong> (the role is locked to
 fact-checker for ordinary admins), view/resend invitations.</li>
@@ -700,21 +700,21 @@ by a database partial-unique index. They keep full admin abilities and gain an
 <strong>Administration</strong> area in the sidebar:</p>
 
 <ol>
-<li><strong>Admins</strong> (<code>/super_admins/admins</code>) — list every admin; open an admin&#39;s page to see their
+<li><strong>Admins</strong> (<code>/super_admins/admins</code>): list every admin; open an admin&#39;s page to see their
 performance (claims <strong>owned / published / awaiting approval / in progress</strong>) and the claims
 they own. From there: <strong>suspend / reactivate</strong> the account, <strong>reset password</strong>, or (from
 the list header) <strong>invite a new admin</strong>. They can&#39;t suspend themselves or the super-admin
 account.</li>
-<li><strong>Fact checkers</strong> — the existing <code>/admins/fact_checkers</code> pages gain <strong>suspend / reactivate</strong>
+<li><strong>Fact checkers</strong>: the existing <code>/admins/fact_checkers</code> pages gain <strong>suspend / reactivate</strong>
 controls that only the Super Admin sees.</li>
-<li><strong>Members</strong> (<code>/admins/members</code>) — list every member; open a member&#39;s page to see their
+<li><strong>Members</strong> (<code>/admins/members</code>): list every member; open a member&#39;s page to see their
 submitted claims and profile, and (Super Admin only) <strong>suspend / reactivate</strong> the account or
 <strong>reset password</strong> (a reset emails the standard 15-minute link; refused while the member is
 suspended).</li>
-<li><strong>Claims</strong> — the standard <code>/admins/claims</code> list, but the Super Admin additionally sees a
-<strong>Drafts</strong> tab and drafts in &quot;All&quot; (full platform visibility). Still read-only oversight —
+<li><strong>Claims</strong>: the standard <code>/admins/claims</code> list, but the Super Admin additionally sees a
+<strong>Drafts</strong> tab and drafts in &quot;All&quot; (full platform visibility). Still read-only oversight:
 they can only publish/transfer claims they personally own.</li>
-<li><strong>Audit Log</strong> (<code>/super_admins/audit_logs</code>) — the full activity feed, filterable by actor
+<li><strong>Audit Log</strong> (<code>/super_admins/audit_logs</code>): the full activity feed, filterable by actor
 and date range (see §9).</li>
 </ol>
 
@@ -723,11 +723,11 @@ and date range (see §9).</li>
 <h3>6.5 Public visitor</h3>
 
 <ul>
-<li><code>/marketplace</code> — paginated, filterable list of <strong>published</strong> claims with verdicts, topics,
-regions, search.</li>
-<li><code>/marketplace/:id</code> — full claim detail: verdict, body, evidence, <strong>source links</strong>, research, fact-checker
-attribution, and <strong>published date + publishing admin</strong>. Related claims by topic at the
-bottom.</li>
+<li><code>/marketplace</code> shows a paginated, filterable list of <strong>published</strong> claims with verdicts,
+topics, regions, search.</li>
+<li><code>/marketplace/:id</code> shows the full claim detail: verdict, body, evidence, <strong>source links</strong>,
+research, fact-checker attribution, and <strong>published date + publishing admin</strong>. Related
+claims by topic at the bottom.</li>
 </ul>
       </section>
 
@@ -742,7 +742,7 @@ public site and the member / fact-checker / admin portals. Anyone can ask the
 fact-checking AI a question and get a streamed, sourced answer.</p>
 
 <ul>
-<li><strong>Who can use it:</strong> everyone — signed-in users <em>and</em> anonymous visitors. A signed-in
+<li><strong>Who can use it:</strong> everyone, both signed-in users <em>and</em> anonymous visitors. A signed-in
 user gets a <code>Conversation</code> owned by their account. An anonymous visitor gets nothing
 stored at all: no conversation row, no session token. Their thread lives only in the
 open widget, which reads its own bubbles back and posts them as context on each
@@ -754,7 +754,7 @@ turns are sent upstream as history.</li>
 access.</li>
 </ul>
 
-<p>Two endpoints — this is the closest thing the app has to a programmatic <strong>API</strong>:</p>
+<p>Two endpoints, the closest thing the app has to a programmatic <strong>API</strong>:</p>
 
 <table><thead>
 <tr>
@@ -795,7 +795,7 @@ up with &quot;Still working on it…&quot;; after 210s (just past the client&#39
 gives up on the bubble and offers the question back.</li>
 <li>On <code>done</code> it persists the user + assistant messages atomically and swaps the bubble for
 the final styled card (rendered Markdown + sources). On error it replaces the bubble with
-a danger notice carrying a <strong>retry</strong> button — the original message is embedded, so a click
+a danger notice carrying a <strong>retry</strong> button. The original message is embedded, so a click
 re-sends with no client-side state.</li>
 <li>The job always settles the bubble exactly once. If the upstream stops without a terminal
 frame (dropped connection, read timeout), whatever text arrived is shown labelled as cut
@@ -803,13 +803,13 @@ off, with a retry. A cut-off reply is never stored and never counted as a turn, 
 stays out of the history either side sends back.</li>
 </ol>
 
-<p><strong>External dependency:</strong> answers come from the <strong>FactCheckAI</strong> service — a thin Ruby client
+<p><strong>External dependency:</strong> answers come from the <strong>FactCheckAI</strong> service, a thin Ruby client
 (<code>lib/fact_check_ai/</code>) over a configurable REST API (<code>FACTCHECK_AI_API_URL</code>). The same client
 powers claim analysis (<code>analyse</code> / <code>analyse_stream</code>). If the upstream is down, the user sees
 &quot;Sorry, the fact-checking service is temporarily unavailable.&quot; with a retry.</p>
 
 <p><strong>Realtime + suspension:</strong> <code>ApplicationCable::Connection</code> allows anonymous connections (so
-visitors can chat) and refuses suspended users — see &quot;Account suspension&quot;.</p>
+visitors can chat) and refuses suspended users (see &quot;Account suspension&quot;).</p>
       </section>
 
       <hr class="divider">
@@ -822,16 +822,16 @@ visitors can chat) and refuses suspended users — see &quot;Account suspension&
 on access, enforced in depth:</p>
 
 <ul>
-<li><strong>Login</strong> — <code>SessionsController#create</code> refuses a suspended user.</li>
-<li><strong>Existing sessions</strong> — <code>User#suspend!</code> destroys all of the user&#39;s sessions in a
+<li><strong>Login</strong>: <code>SessionsController#create</code> refuses a suspended user.</li>
+<li><strong>Existing sessions</strong>: <code>User#suspend!</code> destroys all of the user&#39;s sessions in a
 transaction, so they&#39;re signed out everywhere immediately.</li>
-<li><strong>Session resume</strong> — <code>Authentication#find_session_by_cookie</code> won&#39;t resume a session whose
+<li><strong>Session resume</strong>: <code>Authentication#find_session_by_cookie</code> won&#39;t resume a session whose
 user isn&#39;t <code>active_for_auth?</code>.</li>
-<li><strong>Password reset</strong> — self-service reset is refused for suspended users; the Super Admin&#39;s
+<li><strong>Password reset</strong>: self-service reset is refused for suspended users; the Super Admin&#39;s
 &quot;reset password&quot; is also refused until the account is reactivated.</li>
-<li><strong>Real-time</strong> — <code>ApplicationCable::Connection</code> refuses a suspended user, so they get no
+<li><strong>Real-time</strong>: <code>ApplicationCable::Connection</code> refuses a suspended user, so they get no
 live Turbo Stream updates.</li>
-<li><strong>Work routing</strong> — suspended fact checkers can&#39;t be assigned claims; suspended admins can&#39;t
+<li><strong>Work routing</strong>: suspended fact checkers can&#39;t be assigned claims; suspended admins can&#39;t
 receive transferred ownership.</li>
 </ul>
 
@@ -908,20 +908,20 @@ completed Claim #100&quot;, &quot;Admin A transferred Claim #101 to Admin C&quot
 
 
 <ul>
-<li><strong>Sessions</strong> — cookie-based; a signed cookie holds a <code>Session.id</code> stored in the DB, so
+<li><strong>Sessions</strong>: cookie-based; a signed cookie holds a <code>Session.id</code> stored in the DB, so
 sessions can be terminated server-side. Every request is gated by
 <code>Authentication#require_authentication</code> unless a controller opts out with
 <code>allow_unauthenticated_access</code>. Suspended users are rejected at login and on resume (§8).</li>
-<li><strong>Role gating</strong> — role-namespaced base controllers (<code>Members::BaseController</code>,
+<li><strong>Role gating</strong>: role-namespaced base controllers (<code>Members::BaseController</code>,
 <code>FactCheckers::BaseController</code>, <code>Admins::BaseController</code>) enforce the role via
 <code>before_action</code>. <code>SuperAdmins::BaseController</code> inherits the admin gate and adds
 <code>ensure_super_admin</code> (shared <code>SuperAdminGuard</code> concern). Hitting a forbidden URL redirects
 away.</li>
-<li><strong>Ownership gating</strong> — publish/unpublish/republish/transfer check <code>claim.owned_by?</code> /
+<li><strong>Ownership gating</strong>: publish/unpublish/republish/transfer check <code>claim.owned_by?</code> /
 <code>publishable_by?</code> in both the view (hide controls) and the controller (reject the request).</li>
-<li><strong>Single super admin</strong> — a partial unique index on <code>admins.super_admin</code> guarantees at most
+<li><strong>Single super admin</strong>: a partial unique index on <code>admins.super_admin</code> guarantees at most
 one.</li>
-<li><strong>Password reset</strong> — <code>User.generates_token_for(:password_reset)</code> mints a 15-minute signed
+<li><strong>Password reset</strong>: <code>User.generates_token_for(:password_reset)</code> mints a 15-minute signed
 token bound to the password salt, so changing the password invalidates outstanding tokens.
 The request always returns the same generic notice to avoid leaking account existence.</li>
 </ul>
@@ -937,18 +937,18 @@ The request always returns the same generic notice to avoid leaking account exis
 <code>Admins::DashboardChartBuilder</code>. What each one <strong>counts</strong>:</p>
 
 <ul>
-<li><strong>Claim pipeline</strong> — all non-draft claims by stage: Pending, In progress, <strong>Awaiting</strong>
-(in_progress with a verdict), Published, Unpublished. (Awaiting is split out of In progress
-so the two don&#39;t double-count.)</li>
-<li><strong>Verification requests</strong> — <code>Assignment</code> lifecycle (pending / in progress / completed /
+<li><strong>Claim pipeline</strong>: all non-draft claims, grouped by stage into Pending, In progress,
+<strong>Awaiting</strong> (in_progress with a verdict), Published, and Unpublished. (Awaiting is split
+out of In progress so the two don&#39;t double-count.)</li>
+<li><strong>Verification requests</strong>: <code>Assignment</code> lifecycle (pending / in progress / completed /
 rejected) and average completion time.</li>
-<li><strong>Published claims by category / by verdict</strong> — <strong>published claims only</strong>, by topic or by
+<li><strong>Published claims by category / by verdict</strong>: <strong>published claims only</strong>, by topic or by
 verdict, so the two views reconcile to the same total.</li>
-<li><strong>Claims submitted</strong> — claims by <code>created_at</code> (submission date).</li>
-<li><strong>Fact-checks published</strong> — published claims by <code>verification.published_at</code> (the real
+<li><strong>Claims submitted</strong>: claims by <code>created_at</code> (submission date).</li>
+<li><strong>Fact-checks published</strong>: published claims by <code>verification.published_at</code> (the real
 approval/publish date). Long ranges (90 days / all time) are bucketed by week or month so
 sparse data stays readable; the current period is highlighted.</li>
-<li><strong>Top fact-checkers</strong> — by <strong>published</strong> verdicts. <strong>Top members</strong> — by <strong>published</strong> claims.</li>
+<li><strong>Top fact-checkers</strong>: by <strong>published</strong> verdicts. <strong>Top members</strong>: by <strong>published</strong> claims.</li>
 </ul>
 
 <p>The Super Admin also gets <strong>per-admin performance</strong> (owned / published / awaiting / in
@@ -976,7 +976,7 @@ To bootstrap the very first admin when none exists, open a console
 (<code>kamal app exec -i &#39;bin/rails console&#39;</code>) and create the <code>Admin</code> record before promoting.</p>
 
 <blockquote>
-<p><strong>Never run <code>db:seed</code> in production</strong> — the seed wipes claims (<code>Claim.destroy_all</code>). Use the
+<p><strong>Never run <code>db:seed</code> in production</strong>: the seed wipes claims (<code>Claim.destroy_all</code>). Use the
 rake task or console to set the super admin.</p>
 </blockquote>
 
@@ -1335,8 +1335,8 @@ surrounding sentence readable: "New claim assigned to you" over
 <p>Active Storage is configured for two services:</p>
 
 <ul>
-<li><strong>local</strong> — disk-based, development.</li>
-<li><strong>cloudflare</strong> — Cloudflare R2 (S3-compatible) via <code>aws-sdk-s3</code>. R2 quirks handled in
+<li><strong>local</strong>: disk-based, development.</li>
+<li><strong>cloudflare</strong>: Cloudflare R2 (S3-compatible) via <code>aws-sdk-s3</code>. R2 quirks handled in
 <code>config/storage.yml</code> (<code>force_path_style: true</code>, checksum options <code>when_required</code>).</li>
 </ul>
 
@@ -1421,8 +1421,8 @@ test/                            ← controllers, models, services, helpers, fix
 bin/dev              # boots web + tailwind watch + Solid Queue
 </code></pre>
 
-<p>Sign in with the seeded accounts (see <code>db/seeds.rb</code> — <code>admin@kasagandi.com</code> is seeded as the
-super admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
+<p>Sign in with the seeded accounts (<code>db/seeds.rb</code> seeds <code>admin@kasagandi.com</code> as the super
+admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
       </section>
 
       <hr class="divider">
@@ -1457,21 +1457,21 @@ tests.</li>
 
 
 <ul>
-<li><strong>Claim</strong> — a public statement someone wants verified. The unit of work.</li>
-<li><strong>Owner admin</strong> — the single admin accountable for a claim; the only one who can publish,
+<li><strong>Claim</strong>: a public statement someone wants verified. The unit of work.</li>
+<li><strong>Owner admin</strong>: the single admin accountable for a claim; the only one who can publish,
 unpublish, republish, or transfer it. Set when they assign a fact checker.</li>
-<li><strong>Transfer</strong> — moving claim ownership from one admin to another (audited).</li>
-<li><strong>Evidence</strong> — supporting material the member supplies (description + files).</li>
-<li><strong>Assignment</strong> — the relationship between a claim and a fact checker (due date, notes,
+<li><strong>Transfer</strong>: moving claim ownership from one admin to another (audited).</li>
+<li><strong>Evidence</strong>: supporting material the member supplies (description + files).</li>
+<li><strong>Assignment</strong>: the relationship between a claim and a fact checker (due date, notes,
 status).</li>
-<li><strong>Verification</strong> — the fact checker&#39;s verdict and research write-up.</li>
-<li><strong>Verdict</strong> — one of True, False, Misleading, Partly True, Unverifiable.</li>
-<li><strong>Audit log</strong> — immutable record of who did what; the platform&#39;s accountability trail.</li>
-<li><strong>Suspension</strong> — an account state that blocks all access (login, sessions, reset, realtime).</li>
-<li><strong>Super Admin</strong> — the single platform owner; oversees admins, fact-checker accounts, global
+<li><strong>Verification</strong>: the fact checker&#39;s verdict and research write-up.</li>
+<li><strong>Verdict</strong>: one of True, False, Misleading, Partly True, Unverifiable.</li>
+<li><strong>Audit log</strong>: immutable record of who did what; the platform&#39;s accountability trail.</li>
+<li><strong>Suspension</strong>: an account state that blocks all access (login, sessions, reset, realtime).</li>
+<li><strong>Super Admin</strong>: the single platform owner; oversees admins, fact-checker accounts, global
 claim visibility, the audit log, and analytics.</li>
-<li><strong>Marketplace</strong> — the public catalogue of published claims.</li>
-<li><strong>Accredited</strong> — fact checkers with <code>verified: true</code>, marked with a check icon.</li>
+<li><strong>Marketplace</strong>: the public catalogue of published claims.</li>
+<li><strong>Accredited</strong>: fact checkers with <code>verified: true</code>, marked with a check icon.</li>
 </ul>
       </section>
 
@@ -1484,14 +1484,14 @@ claim visibility, the audit log, and analytics.</li>
 <p>External partners can list Kasagadi&#39;s <strong>published, fact-checked claims</strong> from their own
 apps through a read-only JSON API. The full, interactive reference lives at
 <strong><a href="api.html">docs.kasagadi.ai/api.html</a></strong> (Swagger UI), backed by the machine-readable
-<a href="openapi.yaml"><code>openapi.yaml</code></a> contract — import that into Postman/Insomnia or a client
+<a href="openapi.yaml"><code>openapi.yaml</code></a> contract. Import that into Postman/Insomnia or a client
 generator.</p>
 
 <ul>
 <li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li>
 <li><strong>Auth:</strong> a per-partner API key sent as <code>Authorization: Bearer kg_live_…</code>. Keys are
-issued by the Kasagadi team, secret, and revocable. Use them <strong>server-to-server</strong> —
-never embed a key in a browser or mobile app.</li>
+issued by the Kasagadi team, secret, and revocable. Use them <strong>server-to-server</strong>.
+Never embed a key in a browser or mobile app.</li>
 <li><strong>Scope:</strong> only <strong>published</strong> claims are ever returned. Drafts and in-progress claims
 are structurally impossible to reach through the API.</li>
 </ul>
@@ -1529,7 +1529,7 @@ are structurally impossible to reach through the API.</li>
 
 <p><strong>List filters</strong> (all optional): <code>topic</code>, <code>region</code>, <code>verdict</code>
 (<code>verdict_true</code> / <code>verdict_false</code> / <code>misleading</code> / <code>partly_true</code> / <code>unverifiable</code>),
-<code>q</code> (search over title + content), <code>since</code> (ISO-8601 — only claims published on/after it,
+<code>q</code> (search over title + content), <code>since</code> (ISO-8601: only claims published on/after it,
 for incremental syncing), <code>page</code>, and <code>per_page</code> (capped at 100).</p>
 
 <p><strong>Example:</strong></p>
@@ -1548,7 +1548,7 @@ Bearer over HTTPS · per-key rate limiting (~300 req/min → <code>429</code>) �
 (cross-origin browser access is allowed only from the docs Swagger UI) · an explicit field
 allowlist (no PII, no internal columns).</p>
 
-<p><strong>Issuing keys (ops):</strong> keys are managed from the console for now —
+<p><strong>Issuing keys (ops):</strong> keys are managed from the console for now:
 <code>bin/rails &quot;api_key:issue[Partner Name]&quot;</code> prints the key <strong>once</strong> (store it immediately),
 <code>bin/rails api_key:list</code> shows all keys and usage, and <code>bin/rails &quot;api_key:revoke[ID]&quot;</code>
 disables one.</p>
@@ -1603,7 +1603,7 @@ preferences, and never write either into a log.</p>
   "links": { "privacy_policy": "https://…/privacy", "terms": "https://…/terms", "cookies": "https://…/cookies" }
 } }</code></pre>
 <p><strong>What the app does with it.</strong> Cache it on disk and refresh on each cold start. Drive the
-file picker from <code>uploads.evidence</code> rather than hard-coding "10MB" — server limits can
+file picker from <code>uploads.evidence</code> rather than hard-coding "10MB". Server limits can
 change, and a hard-coded copy will drift and reject files the server would accept, or
 accept files it rejects. Render verdict and status labels from these lists so a new verdict
 type does not require an app release. Compare the running build against
@@ -1633,7 +1633,7 @@ afterwards.</p>
 <p><strong>Only members self-register.</strong> Fact-checkers arrive by invitation (§22.11), so the app
 needs no "sign up as a fact-checker" path.</p>
 <p><strong>Password rules,</strong> worth enforcing in the form so Kofi finds out before the round trip:
-at least 8 characters, at most 72 bytes, and <code>password_confirmation</code> is <strong>required</strong> —
+at least 8 characters, at most 72 bytes, and <code>password_confirmation</code> is <strong>required</strong>:
 omitting it is rejected rather than skipping the check.</p>
 <p><strong>When it fails,</strong> the body names the field:</p>
 <pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
@@ -1704,10 +1704,10 @@ cannot be used to discover whether an address has an account.</p>
 <pre><code class="language-json">{ "data": { "token_type": "Bearer", "access_token": "…", "refresh_token": "…",
             "expires_in": 1800, "refresh_expires_in": 2592000 } }</code></pre>
 <p>No <code>user</code> object comes back: the app already has it. <strong>Store both new tokens and discard
-the old pair immediately</strong> — the refresh token you just spent is already dead.</p>
+the old pair immediately</strong>: the refresh token you just spent is already dead.</p>
 <p><strong>Build this as an interceptor,</strong> not as a check on each screen: on any <code>401</code>, refresh once
 and replay the original request. If the refresh itself returns <code>401</code>, the session is
-genuinely over — clear the keychain and show the sign-in screen.</p>
+genuinely over. Clear the keychain and show the sign-in screen.</p>
 <p><strong>One trap worth designing around.</strong> Refresh is single-use. If five requests fail with
 <code>401</code> at once and each fires its own refresh, the first succeeds and the rest present a
 spent token and get <code>401</code>, which will look like a broken session. <strong>Single-flight the
@@ -1731,7 +1731,7 @@ laptop, or in a browser with no route back into the app.</em></p>
 endpoint cannot be used to discover who has an account. The app cannot tell either: show
 the same "check your email" screen regardless, and never phrase it as confirmation that
 the address was found.</p>
-<p>Step two — Ama types the code and her new password on one screen:</p>
+<p>Step two, Ama types the code and her new password on one screen:</p>
 <pre><code>PUT /api/v1/auth/password_resets/000000
 { "reset_code": "482913",
   "email_address": "ama@example.com",
@@ -1748,13 +1748,13 @@ destroys every session on every device and the app returns Ama to the sign-in sc
 she was signed in on a tablet, that session is gone too.</p>
 <p>The code <strong>expires in 15 minutes</strong>, works <strong>once</strong>, and dies after <strong>five wrong attempts</strong>.</p>
 <p><strong>Two failure shapes to handle differently:</strong></p>
-<ul><li><code>422</code> — the password itself was rejected (too short, too long, confirmation mismatch). <strong>The code is not spent.</strong> Let her fix the password and submit again with the same code.</li><li><code>401</code> "That reset code is invalid or has expired." — wrong, expired, already used, or five attempts burned. Send her back to step one for a fresh code.</li></ul>
+<ul><li><code>422</code> means the password itself was rejected (too short, too long, confirmation mismatch). <strong>The code is not spent.</strong> Let her fix the password and submit again with the same code.</li><li><code>401</code> "That reset code is invalid or has expired." means the code was wrong, expired, already used, or five attempts burned. Send her back to step one for a fresh code.</li></ul>
 <h3 id="22-7-kofi-signs-out">22.7 Kofi signs out</h3>
 <pre><code>DELETE /api/v1/auth/logout
 Authorization: Bearer &lt;access_token&gt;</code></pre>
 <p><code>204 No Content</code>. This destroys <strong>only this device's</strong> session; if Kofi is signed in on a
 tablet, that stays signed in.</p>
-<p><strong>Logout always succeeds</strong> — <code>204</code> even for an expired, already-spent or malformed token,
+<p><strong>Logout always succeeds</strong>: <code>204</code> even for an expired, already-spent or malformed token,
 and even with no header at all. An app can never be stuck holding a credential it cannot
 discard. It accepts <strong>either</strong> token, so send whichever you have.</p>
 <p>Clear the keychain when the response arrives. If the request fails on the network, clear it
@@ -1937,7 +1937,7 @@ single-use link, §6.2), which creates the account. From then on she uses the sa
                "phone": "0209876543", "region": "Ashanti", "bio": "…", "verified": true },
   "abilities": ["marketplace.browse", "chat.use", "assignments.view", "assignments.start",
                 "assignments.reject", "verdicts.submit", "verdicts.edit"] } }</code></pre>
-<p>Note <code>profile</code> carries different keys per role — <code>specialty</code> and <code>verified</code> exist only for
+<p>Note <code>profile</code> carries different keys per role: <code>specialty</code> and <code>verified</code> exist only for
 fact-checkers. Read it by role, not as a fixed shape.</p>
 <h3 id="22-12-akosua-works-through-an-assignment">22.12 Akosua works through an assignment</h3>
 <p><em>Akosua has been handed a claim. She has not opened it yet.</em></p>
@@ -2114,7 +2114,7 @@ claim is no longer available" is both truer and less alarming. The one place a w
 really is a <code>403</code> is the tier itself, and that says nothing about any particular record.</p>
 <h3 id="22-16-kofi-s-account-is-suspended-while-he-is-using-it">22.16 Kofi's account is suspended while he is using it</h3>
 <p><em>A moderator suspends Kofi mid-session.</em></p>
-<p>His tokens stop working immediately — suspension destroys every session, so the next call
+<p>His tokens stop working immediately: suspension destroys every session, so the next call
 returns <code>401</code> and the refresh fails too. There is no grace period and no push notification.</p>
 <p><strong>Design for it:</strong> a <code>401</code> where the refresh also fails is not a bug and not necessarily an
 expiry. Clear credentials, return to sign-in, and let his next sign-in attempt surface the
@@ -2123,7 +2123,7 @@ real reason (<code>403</code> with the suspension message).</p>
 loses its member record, stops working mid-session by design.</p>
 <h3 id="22-17-kofi-is-on-a-bad-network">22.17 Kofi is on a bad network</h3>
 <p><em>Kofi is on 3G in Tamale. Requests time out; he taps twice.</em></p>
-<ul><li><strong>Retrying <code>POST /auth/login</code></strong> is safe. It creates a second session rather than replacing the first, which is fine — sessions are per device and cheap.</li><li><strong>Retrying <code>POST /auth/refresh</code> with the same token is not.</strong> If the first attempt reached the server, the token is spent and the retry returns <code>401</code>. Treat a timed-out refresh as unknown, not failed: retry once, and on <code>401</code> re-authenticate rather than looping.</li><li><strong>Double-tapping "Send code"</strong> is safe. Each request replaces the previous code, so only the most recent email works. If Kofi reads the older message, the code is rejected — worth saying "use the most recent code" on the entry screen.</li><li><strong>Double-tapping "Register"</strong> returns <code>422 has already been taken</code> on the second, not a crash. Treat it as "you already have an account" rather than a hard error.</li></ul>
+<ul><li><strong>Retrying <code>POST /auth/login</code></strong> is safe. It creates a second session rather than replacing the first, which is fine. Sessions are per device and cheap.</li><li><strong>Retrying <code>POST /auth/refresh</code> with the same token is not.</strong> If the first attempt reached the server, the token is spent and the retry returns <code>401</code>. Treat a timed-out refresh as unknown, not failed: retry once, and on <code>401</code> re-authenticate rather than looping.</li><li><strong>Double-tapping "Send code"</strong> is safe. Each request replaces the previous code, so only the most recent email works. If Kofi reads the older message, the code is rejected. It is worth saying "use the most recent code" on the entry screen.</li><li><strong>Double-tapping "Register"</strong> returns <code>422 has already been taken</code> on the second, not a crash. Treat it as "you already have an account" rather than a hard error.</li></ul>
 <p><strong>Rate limits</strong> return <code>429</code>. Back off and show a plain message; do not retry in a tight
 loop.</p>
 <table>
