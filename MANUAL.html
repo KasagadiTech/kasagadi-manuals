@@ -1032,8 +1032,11 @@ reset, and an admin's member reset. All three skip suspended users.</li>
 <strong>notifier</strong> under <code>app/notifiers/</code>, and each decides three things: who it reaches, what it
 says, and which channels carry it.</p>
 <p>Every one of the ten writes to the recipient's in-app feed. Only <strong>four</strong> also send an
-email, and only <strong>three</strong> also send an SMS. That restraint is deliberate: email and SMS
-interrupt a person, SMS costs money, and both are spent only where a delay has a cost.</p>
+email, and <strong>seven</strong> also send an SMS. The split follows the audience rather than the
+urgency: members and fact checkers are reached on a phone, because that is the device they
+submitted from and the one they carry, while the admin desk is reached in the app alone,
+because an admin is already sitting in front of the ledger and every desk notifier fans out
+to every active admin, so one event would buy several messages.</p>
 <h3 id="14-1-the-ten-events">14.1 The ten events</h3>
 <table>
 <thead><tr>
@@ -1051,7 +1054,7 @@ interrupt a person, SMS costs money, and both are spent only where a delay has a
 <td>That member</td>
 <td>✅</td>
 <td>✗</td>
-<td>✗</td>
+<td>✅</td>
 </tr>
 <tr>
 <td><code>NewSubmissionNotifier</code></td>
@@ -1075,7 +1078,7 @@ interrupt a person, SMS costs money, and both are spent only where a delay has a
 <td>The member</td>
 <td>✅</td>
 <td>✗</td>
-<td>✗</td>
+<td>✅</td>
 </tr>
 <tr>
 <td><code>ClaimReassignedNotifier</code></td>
@@ -1115,7 +1118,7 @@ interrupt a person, SMS costs money, and both are spent only where a delay has a
 <td>The checker who wrote the verdict</td>
 <td>✅</td>
 <td>✅</td>
-<td>✗</td>
+<td>✅</td>
 </tr>
 <tr>
 <td><code>ClaimUnpublishedNotifier</code></td>
@@ -1123,7 +1126,7 @@ interrupt a person, SMS costs money, and both are spent only where a delay has a
 <td>The member</td>
 <td>✅</td>
 <td>✗</td>
-<td>✗</td>
+<td>✅</td>
 </tr>
 </tbody>
 </table>
@@ -1151,10 +1154,13 @@ the new one.</li>
 <li><strong><code>ClaimInReviewNotifier</code> says "assigned", not "started".</strong> It fires on <code>assign_checker</code>,
 while the assignment is still <code>pending</code> and the checker can still hand it back. The class
 name predates the distinction and is kept because the persisted <code>type</code> column carries it.</li>
-<li><strong>The assignment email is guarded, the in-app row is not.</strong> The mailer addresses whoever
-holds the assignment when the job runs, so a second reassignment inside job latency would
-mail the wrong checker; the email is skipped in that case. The in-app row stands either
-way, because it is history and correct as written.</li>
+<li><strong>The assignment email and text are guarded, the in-app row is not.</strong> Both outbound
+channels address whoever holds the assignment when the job runs, so a second reassignment
+inside job latency would reach a checker the claim has already left; both are skipped in
+that case, on the one <code>ClaimAssignedNotifier::STILL_ASSIGNED</code> condition. The text is the
+worse of the two to get wrong: it costs money and it tells someone to go and work on a
+claim that is not theirs. The in-app row stands either way, because it is history and
+correct as written.</li>
 <li><strong>A verdict announces itself once.</strong> <code>Verification</code> notifies on create only. It stays
 revisable while it waits on an admin, and re-announcing every edit would turn the approval
 queue into noise.</li>
@@ -1224,7 +1230,7 @@ recipient saw it rather than a reconstruction of it.</p>
 <p><code>/admins/notifications</code> is the ledger. Five numbers sit above the rows and answer the
 question the page exists to ask: <strong>sent</strong> (every notification), <strong>reached</strong> (<code>sent</code> plus
 <code>delivered</code>), <strong>failed</strong>, <strong>unreachable</strong> (<code>skipped</code>), and <strong>in app only</strong> (notifications
-with no delivery rows at all, which is six of the ten notifiers).</p>
+with no delivery rows at all, which is the three admin desk notifiers).</p>
 <p>Each row is one notification: the recipient and their role, the title, and two fixed channel
 slots, email then SMS, always in that order. A channel that was never used reads as an
 absence in a place the eye already knows to look, so the column can be scanned rather than
@@ -1270,13 +1276,17 @@ where it lands in server logs, proxy logs and error-tracker breadcrumbs.</p>
 <p>Credentials are deliberately <strong>not</strong> the switch. There is a single credentials file, so the
 production Hubtel account resolves in development too, and "has credentials" would mean the
 channel silently switched itself on wherever the app ran.</p>
-<p>Read the development row again, because it means what it says: <strong>assigning a claim on your
-own machine sends a real, charged SMS to whatever number is on that fact checker's
-profile.</strong> If you are working through the assignment flow locally, either blank the phone
-numbers on your local records or set <code>config.x.sms.enabled = false</code> in
-<code>config/environments/development.rb</code> while you do it. A switched-off channel is not a
-skipped delivery, it is a channel that does not exist, so it records nothing at all: an
-empty SMS column in the ledger on a machine with SMS off is correct, not a bug.</p>
+<p>Read the development row again, because it means what it says: <strong>submitting, assigning,
+reassigning, publishing or unpublishing a claim on your own machine sends a real, charged
+SMS to whatever number is on that member's or fact checker's profile.</strong> Seven of the ten
+notifiers text, so most of the claim lifecycle is now live locally. If you are working
+through any of it, either blank the phone numbers on your local records or set <code>config.x.sms.enabled = false</code> in
+<code>config/environments/development.rb</code> while you do it. A switched-off channel records a
+<strong>skipped</strong> row reading "SMS channel is not configured", so an SMS column full of skips on a
+machine with SMS off is correct, not a bug. It used to record nothing at all, on the
+reasoning that a channel which does not exist cannot skip a delivery; that reads in the
+ledger exactly like a notifier that never fired, which is how an environment deployed
+without Hubtel credentials can send no SMS for weeks with nothing to say so.</p>
 <p><strong>The ceiling is five requests a minute, across all of Hubtel's endpoints.</strong> Sends and
 delivery-receipt polls draw on the same budget (<code>Hubtel::REQUESTS_PER_MINUTE = 5</code>).
 <code>Hubtel::RateLimiter</code> keeps a sliding window over the last minute in the cache and is checked
@@ -1320,7 +1330,11 @@ of what we know.</p>
 <h3 id="14-6-where-the-copy-lives">14.6 Where the copy lives</h3>
 <p><code>config/locales/notifiers.en.yml</code>, scoped by the generated notification class:
 <code>ClaimAssignedNotifier::Notification</code> reads <code>notifiers.claim_assigned_notifier.notification</code>.
-Every entry has a <code>title</code> and a <code>body</code>, and the three SMS notifiers add an <code>sms</code> line.</p>
+Every entry has a <code>title</code> and a <code>body</code>, and the seven SMS notifiers add an <code>sms</code> line. One
+segment is 160 characters, and each notifier passes its claim title truncated to 70, so the
+fixed part of an <code>sms</code> string has to fit in the remaining 90. It must be plain ASCII too: a
+single curly quote or dash drops the whole message from 160 characters per segment to 70,
+which is why <code>DeliveryMethods::Sms</code> folds the text before it goes to the wire.</p>
 <p>Claim titles are often whole sentences, so they are quoted inside body copy to keep the
 surrounding sentence readable: "New claim assigned to you" over
 <code>"Free bus fares for students in September" is now in your queue.</code></p>
@@ -1527,13 +1541,15 @@ admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
         <h2 id="19-testing"><span class="h2-num">19</span> Testing</h2>
 
 
-<pre><code class="bash">bin/rails test                 # full suite (~470 tests)
+<pre><code class="bash">bin/rails test                 # full suite (~1,070 tests)
+bin/rails test:system          # browser tests, drives Chrome
 bin/rubocop                    # style
 bin/brakeman                   # security scan
 bin/importmap audit            # JS dep audit
 </code></pre>
 
-<p>CI runs all four jobs on every push to <code>main</code> and on pull requests.</p>
+<p>CI runs all four jobs on every push to <code>main</code> and on pull requests. Its test job
+runs <code>test test:system</code>, so a browser test failing fails the build.</p>
 
 <p>Conventions:</p>
 
@@ -1543,6 +1559,21 @@ bin/importmap audit            # JS dep audit
 <li>Fixtures cover all roles and lifecycle states (<code>pending_claim</code>, <code>under_review_claim</code>,
 <code>verified_claim</code>, <code>awaiting_approval_claim</code>) plus a second admin for ownership/transfer
 tests.</li>
+<li>System tests live in <code>test/system/</code> and drive a real Chrome.
+<code>HEADED=1</code> opens a window to watch a run, which is the quickest way to see why
+one failed; failures also leave a screenshot in <code>tmp/screenshots</code>.
+<code>test/system/sms_notifications_test.rb</code> walks one claim through its whole life
+and checks the text sent at each step, and <code>LIVE_SMS=1 SMS_TO=+233…</code> makes it
+send real messages through Hubtel rather than stubbed ones.</li>
+<li>Two things a system test depends on and neither is obvious. The runner needs
+<strong>libvips</strong>, because a claim's evidence image is rendered through an Active
+Storage variant. And <strong>selenium-webdriver is pinned below 4.40</strong> for Ruby
+3.3.0, whose parser rejects the anonymous keyword argument forwarding that
+version introduced; without the pin the driver cannot be loaded and no system
+test reaches a browser at all.</li>
+<li>Wait on the state a step leaves behind, never on its flash notice. Notices are
+toasts and are removed a few seconds later, so a test that waits on one passes
+on a fast machine and fails on CI.</li>
 </ul>
       </section>
 

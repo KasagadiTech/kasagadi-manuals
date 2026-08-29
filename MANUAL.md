@@ -451,23 +451,26 @@ Ten things can happen to a claim that somebody needs to hear about. Each one is 
 says, and which channels carry it.
 
 Every one of the ten writes to the recipient's in-app feed. Only **four** also send an
-email, and only **three** also send an SMS. That restraint is deliberate: email and SMS
-interrupt a person, SMS costs money, and both are spent only where a delay has a cost.
+email, and **seven** also send an SMS. The split follows the audience rather than the
+urgency: members and fact checkers are reached on a phone, because that is the device they
+submitted from and the one they carry, while the admin desk is reached in the app alone,
+because an admin is already sitting in front of the ledger and every desk notifier fans out
+to every active admin, so one event would buy several messages.
 
 ### 14.1 The ten events
 
 | Notifier | Fires when | Who hears it | In app | Email | SMS |
 |---|---|---|:---:|:---:|:---:|
-| `ClaimSubmittedNotifier` | A member submits a claim | That member | ✅ | ✗ | ✗ |
+| `ClaimSubmittedNotifier` | A member submits a claim | That member | ✅ | ✗ | ✅ |
 | `NewSubmissionNotifier` | The same submission | The admin desk | ✅ | ✗ | ✗ |
 | `ClaimAssignedNotifier` | An admin assigns a fact checker, and again when a different one is put on it | The fact checker | ✅ | ✅ | ✅ |
-| `ClaimInReviewNotifier` | The `assign_checker` transition | The member | ✅ | ✗ | ✗ |
+| `ClaimInReviewNotifier` | The `assign_checker` transition | The member | ✅ | ✗ | ✅ |
 | `ClaimReassignedNotifier` | An admin hands the claim to a different checker | The **previous** checker | ✅ | ✅ | ✅ |
 | `AssignmentRejectedNotifier` | A checker hands the claim back | The admin desk | ✅ | ✗ | ✗ |
 | `VerdictAwaitingApprovalNotifier` | A verdict is created | The admin desk | ✅ | ✗ | ✗ |
 | `ClaimPublishedNotifier` | The owner admin approves, and again on republish | The member | ✅ | ✅ | ✅ |
-| `VerdictPublishedNotifier` | That same approval | The checker who wrote the verdict | ✅ | ✅ | ✗ |
-| `ClaimUnpublishedNotifier` | The owner admin unpublishes | The member | ✅ | ✗ | ✗ |
+| `VerdictPublishedNotifier` | That same approval | The checker who wrote the verdict | ✅ | ✅ | ✅ |
+| `ClaimUnpublishedNotifier` | The owner admin unpublishes | The member | ✅ | ✗ | ✅ |
 
 The four email notifiers reach `ClaimMailer` through `DeliveryMethods::Email`, which is why
 `ClaimMailer` has exactly four methods: `assigned`, `reassigned`, `published`,
@@ -494,10 +497,13 @@ What the table cannot show:
 - **`ClaimInReviewNotifier` says "assigned", not "started".** It fires on `assign_checker`,
   while the assignment is still `pending` and the checker can still hand it back. The class
   name predates the distinction and is kept because the persisted `type` column carries it.
-- **The assignment email is guarded, the in-app row is not.** The mailer addresses whoever
-  holds the assignment when the job runs, so a second reassignment inside job latency would
-  mail the wrong checker; the email is skipped in that case. The in-app row stands either
-  way, because it is history and correct as written.
+- **The assignment email and text are guarded, the in-app row is not.** Both outbound
+  channels address whoever holds the assignment when the job runs, so a second reassignment
+  inside job latency would reach a checker the claim has already left; both are skipped in
+  that case, on the one `ClaimAssignedNotifier::STILL_ASSIGNED` condition. The text is the
+  worse of the two to get wrong: it costs money and it tells someone to go and work on a
+  claim that is not theirs. The in-app row stands either way, because it is history and
+  correct as written.
 - **A verdict announces itself once.** `Verification` notifies on create only. It stays
   revisable while it waits on an admin, and re-announcing every edit would turn the approval
   queue into noise.
@@ -557,7 +563,7 @@ recipient saw it rather than a reconstruction of it.
 `/admins/notifications` is the ledger. Five numbers sit above the rows and answer the
 question the page exists to ask: **sent** (every notification), **reached** (`sent` plus
 `delivered`), **failed**, **unreachable** (`skipped`), and **in app only** (notifications
-with no delivery rows at all, which is six of the ten notifiers).
+with no delivery rows at all, which is the three admin desk notifiers).
 
 Each row is one notification: the recipient and their role, the title, and two fixed channel
 slots, email then SMS, always in that order. A channel that was never used reads as an
@@ -598,13 +604,17 @@ Credentials are deliberately **not** the switch. There is a single credentials f
 production Hubtel account resolves in development too, and "has credentials" would mean the
 channel silently switched itself on wherever the app ran.
 
-Read the development row again, because it means what it says: **assigning a claim on your
-own machine sends a real, charged SMS to whatever number is on that fact checker's
-profile.** If you are working through the assignment flow locally, either blank the phone
-numbers on your local records or set `config.x.sms.enabled = false` in
-`config/environments/development.rb` while you do it. A switched-off channel is not a
-skipped delivery, it is a channel that does not exist, so it records nothing at all: an
-empty SMS column in the ledger on a machine with SMS off is correct, not a bug.
+Read the development row again, because it means what it says: **submitting, assigning,
+reassigning, publishing or unpublishing a claim on your own machine sends a real, charged
+SMS to whatever number is on that member's or fact checker's profile.** Seven of the ten
+notifiers text, so most of the claim lifecycle is now live locally. If you are working
+through any of it, either blank the phone numbers on your local records or set
+`config.x.sms.enabled = false` in `config/environments/development.rb` while you do it. A switched-off channel records a
+**skipped** row reading "SMS channel is not configured", so an SMS column full of skips on a
+machine with SMS off is correct, not a bug. It used to record nothing at all, on the
+reasoning that a channel which does not exist cannot skip a delivery; that reads in the
+ledger exactly like a notifier that never fired, which is how an environment deployed
+without Hubtel credentials can send no SMS for weeks with nothing to say so.
 
 **The ceiling is five requests a minute, across all of Hubtel's endpoints.** Sends and
 delivery-receipt polls draw on the same budget (`Hubtel::REQUESTS_PER_MINUTE = 5`).
@@ -653,7 +663,11 @@ of what we know.
 
 `config/locales/notifiers.en.yml`, scoped by the generated notification class:
 `ClaimAssignedNotifier::Notification` reads `notifiers.claim_assigned_notifier.notification`.
-Every entry has a `title` and a `body`, and the three SMS notifiers add an `sms` line.
+Every entry has a `title` and a `body`, and the seven SMS notifiers add an `sms` line. One
+segment is 160 characters, and each notifier passes its claim title truncated to 70, so the
+fixed part of an `sms` string has to fit in the remaining 90. It must be plain ASCII too: a
+single curly quote or dash drops the whole message from 160 characters per segment to 70,
+which is why `DeliveryMethods::Sms` folds the text before it goes to the wire.
 
 Claim titles are often whole sentences, so they are quoted inside body copy to keep the
 surrounding sentence readable: "New claim assigned to you" over
@@ -814,13 +828,15 @@ admin in dev) or register a fresh member at `/registration/new`.
 ## Testing
 
 ```bash
-bin/rails test                 # full suite (~470 tests)
+bin/rails test                 # full suite (~1,070 tests)
+bin/rails test:system          # browser tests, drives Chrome
 bin/rubocop                    # style
 bin/brakeman                   # security scan
 bin/importmap audit            # JS dep audit
 ```
 
-CI runs all four jobs on every push to `main` and on pull requests.
+CI runs all four jobs on every push to `main` and on pull requests. Its test job
+runs `test test:system`, so a browser test failing fails the build.
 
 Conventions:
 
@@ -829,6 +845,21 @@ Conventions:
 - Fixtures cover all roles and lifecycle states (`pending_claim`, `under_review_claim`,
   `verified_claim`, `awaiting_approval_claim`) plus a second admin for ownership/transfer
   tests.
+- System tests live in `test/system/` and drive a real Chrome.
+  `HEADED=1` opens a window to watch a run, which is the quickest way to see why
+  one failed; failures also leave a screenshot in `tmp/screenshots`.
+  `test/system/sms_notifications_test.rb` walks one claim through its whole life
+  and checks the text sent at each step, and `LIVE_SMS=1 SMS_TO=+233…` makes it
+  send real messages through Hubtel rather than stubbed ones.
+- Two things a system test depends on and neither is obvious. The runner needs
+  **libvips**, because a claim's evidence image is rendered through an Active
+  Storage variant. And **selenium-webdriver is pinned below 4.40** for Ruby
+  3.3.0, whose parser rejects the anonymous keyword argument forwarding that
+  version introduced; without the pin the driver cannot be loaded and no system
+  test reaches a browser at all.
+- Wait on the state a step leaves behind, never on its flash notice. Notices are
+  toasts and are removed a few seconds later, so a test that waits on one passes
+  on a fast machine and fails on CI.
 
 ---
 
