@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Kasagadi API
-  version: "1.1.0"
+  version: "1.2.0"
   description: |
     The JSON API behind Kasagadi. It serves two different audiences, with two
     different credentials.
@@ -41,12 +41,20 @@ info:
 
     Each operation below states its own. In short:
 
-    - `/claims` and `/claims/{id}` accept **either** a partner key or a user
-      access token, because a published claim is the same public payload either
-      way.
-    - `/me` and `/auth/logout` require a **user access token**.
+    - `/claims`, `/claims/{id}`, `/claims/{id}/related` and `/marketplace/facets`
+      accept **either** a partner key or a user access token, because a published
+      claim is the same public payload either way.
+    - `/me`, `/taxonomies` and `/auth/logout` require a **user access token** and
+      accept both mobile roles.
+    - `/me/dashboard` and everything under `/me/claims` require a **member**
+      token. A fact-checker's token is valid and still refused with `403`.
+    - Everything under `/fact_checker` requires a **fact-checker** token. A
+      member's token is valid and still refused with `403`.
     - `/config` and the rest of `/auth/*` take **no credential**, since they run
       before the app has one.
+
+    An account that somehow holds both roles is treated as a fact-checker, the
+    same way `/me` routes it, so the member tier refuses it.
 
     ## Conventions
 
@@ -68,10 +76,16 @@ servers:
 tags:
   - name: Claims
     description: Published, fact-checked claims
+  - name: Reference
+    description: The vocabularies and filter counts the app builds its pickers from
   - name: Authentication
     description: Register, sign in, refresh and password recovery (mobile app)
   - name: Account
     description: The signed-in user, and app configuration
+  - name: Member
+    description: A member's own claims, drafts and evidence. Member token only.
+  - name: Fact checker
+    description: A fact-checker's queue and verdicts. Fact-checker token only.
 
 paths:
   /claims:
@@ -201,6 +215,101 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /claims/{id}/related:
+    get:
+      tags: [Claims]
+      summary: Read-next claims for a claim detail screen
+      description: |
+        Up to **three** other published claims sharing this claim's primary
+        topic, with the claim itself excluded. Same topic rather than a looser
+        match, because `topic` is the value every filter and badge already keys
+        on, so a reader can see why the rail holds what it holds.
+
+        A fixed handful, so the body is `data` alone with no `meta`: there is
+        nothing to page through. The list can be empty when no other published
+        claim carries the topic.
+
+        Public like the claim it sits beside: everything it can return is
+        already published, so a caller who can fetch the claim can fetch what
+        sits next to it.
+      operationId: listRelatedClaims
+      security:
+        - partnerApiKey: []
+        - mobileAccessToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The claim's numeric id.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Up to three related claims, possibly none.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 3
+                    items: { $ref: "#/components/schemas/Claim" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
+        "404":
+          description: No published claim with that id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /marketplace/facets:
+    get:
+      tags: [Reference]
+      summary: Filter counts for the marketplace
+      description: |
+        How many **published** claims carry each topic, each region and each
+        verdict. The counts come from the same scope the filters themselves run
+        against, so a facet can never promise results that clicking it fails to
+        produce.
+
+        Each facet is an object keyed by the value you would filter on, so the
+        app looks a count up rather than scanning a list. A value with no
+        published claims is **absent rather than zero**: read a missing key as
+        none.
+
+        Public like the claims it counts, so a partner backend building the same
+        filter UI reads it on the key it already uses for `/claims`.
+      operationId: getMarketplaceFacets
+      security:
+        - partnerApiKey: []
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MarketplaceFacets" }
+              example:
+                data:
+                  topics: { Health: 12, Politics: 31, Elections: 4 }
+                  regions: { "Greater Accra": 22, Ashanti: 9 }
+                  verdicts: { verdict_false: 26, misleading: 11, partly_true: 3 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /config:
     get:
       tags: [Account]
@@ -221,6 +330,58 @@ paths:
                 required: [data]
                 properties:
                   data: { $ref: "#/components/schemas/Config" }
+
+  /taxonomies:
+    get:
+      tags: [Reference]
+      summary: Topics, regions and verdicts, with their labels
+      description: |
+        The vocabularies the app's pickers and filters are built from. Every
+        entry carries the `value` to send back on a filter or a claim and the
+        `label` to show a person, so one picker component renders all three
+        lists. Topics add the Material Symbols icon name the web already uses,
+        so the two products look like one product.
+
+        Both mobile roles need this: a member tags a claim with it, a
+        fact-checker browses the marketplace by it. It therefore takes any
+        mobile access token, not a role-specific one.
+
+        `/config` already carries the raw `verdicts` and `claim_statuses`
+        values. This is the same vocabulary with human labels attached; read
+        labels from here rather than capitalising the raw values in the app.
+      operationId: listTaxonomies
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The vocabularies.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Taxonomies" }
+              example:
+                data:
+                  topics:
+                    - { value: "Health", label: "Health", icon: "medical_services" }
+                    - { value: "Politics", label: "Politics", icon: "gavel" }
+                  regions:
+                    - { value: "Greater Accra", label: "Greater Accra" }
+                    - { value: "Ashanti", label: "Ashanti" }
+                  verdicts:
+                    - { value: "verdict_true", label: "True" }
+                    - { value: "verdict_false", label: "False" }
+                    - { value: "misleading", label: "Misleading" }
+                    - { value: "partly_true", label: "Partly True" }
+                    - { value: "unverifiable", label: "Unverifiable" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /me:
     get:
@@ -250,6 +411,1111 @@ paths:
           $ref: "#/components/responses/InvalidAccessToken"
         "403":
           $ref: "#/components/responses/NoMobileAccess"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/dashboard:
+    get:
+      tags: [Member]
+      summary: The member home screen
+      description: |
+        The six counts across the top and the claim list under them, from the
+        same object the web dashboard reads, so a member cannot open the app and
+        the website and be told two different things about their own claims.
+
+        `counts.review` repeats `counts.in_progress` on purpose: the web
+        dashboard has always offered both names for the same tab.
+
+        Claims an admin has **unpublished** are absent from every count and
+        every list. Hiding a claim from the marketplace is not something the
+        member is shown, on either platform.
+
+        `data.filter` echoes the filter actually applied. An unrecognised value
+        falls back to `all` rather than being refused, so read it back rather
+        than assuming what you sent was used.
+      operationId: getMemberDashboard
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: filter
+          in: query
+          description: |
+            Which tab. `all` is the default and **excludes drafts**: that is the
+            web's meaning of the word, and drafts have their own tab.
+          schema:
+            type: string
+            enum: [all, drafts, pending, in_progress, verified]
+            default: all
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          description: Items per page. Capped at 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: The dashboard.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberDashboard" }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+              example:
+                data:
+                  filter: "all"
+                  counts: { all: 7, drafts: 2, pending: 1, in_progress: 3, review: 3, verified: 3 }
+                  claims:
+                    - id: 88
+                      title: "Free bus fares for students in September"
+                      content: "A WhatsApp broadcast says the Ministry has approved free bus fares…"
+                      source: "WhatsApp"
+                      source_links: ["https://example.com/post/1"]
+                      topics: ["Education"]
+                      regions: ["Greater Accra"]
+                      status: "in_progress"
+                      cover_image_url: "https://kasagadi.ai/rails/active_storage/blobs/redirect/…/photo.jpg"
+                      created_at: "2026-08-01T09:12:00Z"
+                      updated_at: "2026-08-03T14:40:00Z"
+                      verdict: null
+                meta: { page: 1, per_page: 10, total_pages: 1, total_count: 7 }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/claims:
+    get:
+      tags: [Member]
+      summary: List the member's own claims
+      description: |
+        The same list the dashboard shows, without the counts, taking the same
+        filter names from the same object so the app's "My claims" tabs and the
+        web dashboard's tabs cannot come to mean different things.
+
+        `all`, the default, **excludes drafts**. Ask for `drafts` to get them.
+
+        Entries here omit `evidences`: a list would pay for it in queries and no
+        list screen shows it. Fetch a single claim for that.
+      operationId: listMemberClaims
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [all, drafts, pending, in_progress, verified]
+            default: all
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          description: Items per page. Capped at 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 15 }
+      responses:
+        "200":
+          description: A page of the member's claims.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/MemberClaim" }
+                  meta:
+                    allOf:
+                      - $ref: "#/components/schemas/PageMeta"
+                      - type: object
+                        properties:
+                          filter:
+                            type: string
+                            description: The filter actually applied, after fallback.
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+    post:
+      tags: [Member]
+      summary: Start a draft claim
+      description: |
+        Creates a **draft**. Nothing reaches the fact-checking queue until
+        `POST /me/claims/{id}/submit`, which is where the strict rules live, so
+        a half-written claim can be saved from a phone on a bad connection
+        without being refused.
+
+        Only `source_links` are validated at this stage: each entry must be a
+        valid `http` or `https` link.
+
+        Cover images are not accepted here. A claim's cover is promoted from the
+        first image among its evidence, so it follows from the evidence
+        endpoints rather than being set on its own.
+
+        The response is the full claim, `evidences` included (empty at this
+        point), so the app never has to follow a write with a read.
+      operationId: createMemberClaim
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claim]
+              properties:
+                claim: { $ref: "#/components/schemas/MemberClaimInput" }
+            example:
+              claim:
+                title: "Free bus fares for students in September"
+                content: "A WhatsApp broadcast says the Ministry has approved free bus fares…"
+                source: "WhatsApp"
+                topics: ["Education"]
+                regions: ["Greater Accra"]
+                source_links: ["https://example.com/post/1"]
+      responses:
+        "201":
+          description: The draft.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberClaimDetail" }
+        "400":
+          description: |
+            Malformed JSON, or no `claim` key in the body. A missing envelope is
+            a malformed request, not a validation failure about its contents.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                malformedJson:
+                  value: { error: { status: 400, message: "Malformed JSON in request body" } }
+                missingEnvelope:
+                  value: { error: { status: 400, message: "Missing parameter: claim" } }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "422":
+          description: The draft was rejected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error:
+                  status: 422
+                  message: "Validation failed"
+                  details: { source_links: ["must be valid http(s) links"] }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/claims/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The claim's numeric id.
+        schema: { type: integer }
+    get:
+      tags: [Member]
+      summary: Get one of the member's own claims
+      description: |
+        The claim in whatever state it is in, drafts included, with the evidence
+        attached to it and the verdict once a checker has written one. The
+        verdict appears from the moment it is submitted, before an admin has
+        published it, which is when the web dashboard starts showing the member
+        their badge too.
+
+        Nothing outside the caller's own claims is reachable. Another member's
+        claim, and one an admin has unpublished, are both simply **absent** and
+        answer `404`. Deliberately not `403`: a claim the caller may not read
+        should not be confirmed to exist by the status code.
+      operationId: getMemberClaim
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The claim.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberClaimDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+    patch:
+      tags: [Member]
+      summary: Edit a draft
+      description: |
+        Drafts only. A submitted claim is out of the member's hands, and the API
+        refuses rather than silently ignoring the edit, which would tell the app
+        it had worked.
+
+        Only the keys you send are written.
+      operationId: updateMemberClaim
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claim]
+              properties:
+                claim: { $ref: "#/components/schemas/MemberClaimInput" }
+      responses:
+        "200":
+          description: The updated draft.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberClaimDetail" }
+        "400":
+          $ref: "#/components/responses/MalformedJson"
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "422":
+          description: |
+            The claim is no longer a draft, or the fields were rejected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                notADraft:
+                  value: { error: { status: 422, message: "This claim has already been submitted." } }
+                invalid:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details: { source_links: ["must be valid http(s) links"] }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+    delete:
+      tags: [Member]
+      summary: Discard a draft
+      description: |
+        Drafts only, and permanent. The claim's evidence rows go with it and
+        Active Storage purges their uploads, so nothing is left orphaned.
+
+        Once a claim has been submitted it can no longer be discarded: it is in
+        the platform's queue, and somebody may already be working on it.
+      operationId: deleteMemberClaim
+      security:
+        - mobileAccessToken: []
+      responses:
+        "204":
+          description: Discarded. No body.
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "422":
+          $ref: "#/components/responses/ClaimAlreadySubmitted"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/claims/{id}/submit:
+    post:
+      tags: [Member]
+      summary: Submit a draft for fact-checking
+      description: |
+        Promotes the draft to `pending_assignment` and puts it on the admin
+        desk. This is the point the relaxed draft rules stop applying: `title`,
+        `content`, `source`, at least one topic and at least one region must all
+        be present, and **at least one piece of evidence with a file actually
+        attached** must exist. Only once that passes does the state change, so a
+        claim can never reach the queue half-finished.
+
+        Attach evidence first, with `POST /me/claims/{id}/evidences`.
+
+        Submitting also queues the AI analysis, tells the member their claim
+        landed, and tells the admin desk there is something waiting to be
+        assigned. Send it once; there is no separate confirmation step.
+
+        No request body.
+      operationId: submitMemberClaim
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Submitted. `status` is now `pending_assignment`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberClaimDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "422":
+          description: |
+            Already submitted, or the claim is not complete enough to submit.
+            Note that the missing-evidence message arrives under `base` rather
+            than under a field, because it is about the claim as a whole.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                alreadySubmitted:
+                  value: { error: { status: 422, message: "This claim has already been submitted." } }
+                noEvidence:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details:
+                        base: ["Please attach at least one piece of evidence with a supporting file."]
+                incomplete:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details:
+                        title: ["can't be blank"]
+                        topic: ["can't be blank"]
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/claims/{claim_id}/evidences:
+    post:
+      tags: [Member]
+      summary: Attach evidence to a draft
+      description: |
+        One `multipart/form-data` request carrying the files themselves. There
+        is no signed-upload handshake and no separate commit step: send the
+        bytes, get the claim back.
+
+        ```
+        curl -X POST https://kasagadi.ai/api/v1/me/claims/42/evidences \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -F "evidence[files][]=@screenshot.png" \
+          -F "evidence[files][]=@receipt.pdf" \
+          -F "evidence[description]=Screenshot of the post"
+        ```
+
+        Evidence is **added** to what is already there rather than replacing it:
+        a member photographs one thing at a time, and a phone that loses signal
+        halfway through a set must not wipe what already uploaded.
+
+        Every file is judged on what the server identifies it as from the bytes,
+        not on the content type the request declared, so a payload renamed to
+        `.png` is refused even though the request called it an image. The
+        allowed types and the 10MB ceiling are the `uploads.evidence` block of
+        `/config`; drive the picker from there rather than hard-coding them.
+
+        Drafts only. The response is the whole claim, so the app can redraw its
+        evidence list without a second request.
+      operationId: createEvidence
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: ["evidence[files][]"]
+              properties:
+                "evidence[files][]":
+                  type: array
+                  minItems: 1
+                  description: |
+                    The files themselves, repeated once per file. At least one
+                    is required. A file field submitted with nothing chosen
+                    arrives as an empty string and does not count.
+                  items: { type: string, format: binary }
+                "evidence[description]":
+                  type: string
+                  description: Optional note about what these files show.
+            encoding:
+              "evidence[files][]":
+                style: form
+                explode: true
+      responses:
+        "201":
+          description: The claim, with the new evidence in `evidences`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberClaimDetail" }
+        "400":
+          description: No `evidence` part in the body at all.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 400, message: "Missing parameter: evidence" } }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "422":
+          description: |
+            No files, an unsupported format, a file over 10MB, or a claim that
+            is no longer a draft. A file that is both unsupported and too large
+            says both.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                noFiles:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details: { files: ["Attach at least one file."] }
+                unsupportedFormat:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details:
+                        files: ['"notes.exe" is not a supported format. Attach JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG']
+                tooLarge:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details:
+                        files: ['"clip.wav" is larger than 10MB']
+                notADraft:
+                  value: { error: { status: 422, message: "This claim has already been submitted." } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/claims/{claim_id}/evidences/{id}:
+    delete:
+      tags: [Member]
+      summary: Remove one evidence row from a draft
+      description: |
+        Removes the row and purges its uploads. Answers with the whole claim
+        rather than `204`, so the app gets back the evidence list it should now
+        be showing.
+
+        The claim's cover image is deliberately left alone. It is a copy taken
+        when the cover was promoted, not a reference to this evidence, and the
+        web behaves the same way: removing the evidence a cover came from does
+        not blank the cover.
+
+        Drafts only.
+      operationId: deleteEvidence
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: id
+          in: path
+          required: true
+          description: The evidence row's id, from the claim's `evidences[].id`.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The claim, without that evidence.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MemberClaimDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "404":
+          description: No such claim for this member, or no such evidence on it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 404, message: "Not found" } }
+        "422":
+          $ref: "#/components/responses/ClaimAlreadySubmitted"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/dashboard:
+    get:
+      tags: [Fact checker]
+      summary: The fact-checker home screen
+      description: |
+        Four counts, what they have found so far, what is waiting, and what they
+        last submitted. Every number comes from the same object the web
+        dashboard reads.
+
+        `stats.completed` counts assignments where a verdict was written;
+        `stats.published` counts verdicts that actually reached the marketplace.
+        The two differ while an admin has not approved yet, and that gap is the
+        point of showing both.
+
+        `verdict_breakdown` is keyed by verdict name and **omits verdicts this
+        checker has never reached** rather than sending a zero.
+
+        `active_assignments` is at most five, oldest first: the queue is a to-do
+        list, and the thing waiting longest is the thing to do next.
+        `recent_verdicts` is at most five, newest submission first, and each
+        entry says which claim it belongs to.
+      operationId: getFactCheckerDashboard
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The dashboard.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/FactCheckerDashboard" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/assignments:
+    get:
+      tags: [Fact checker]
+      summary: The assignment queue
+      description: |
+        The same queue the web shows, taking the same filter names from the same
+        object, so the app's tabs and the web's tabs cannot come to mean
+        different things.
+
+        **Assignments this checker has handed back are absent entirely.** A
+        rejected claim has gone back to the admin desk and is no longer their
+        work, which is why `rejected` is not an available `status` filter: it
+        would only ever return nothing.
+
+        `meta.stats` counts the whole queue rather than the current filter, so a
+        tab does not hide its own count the moment you select it.
+
+        `meta` echoes the resolved filters back. An unrecognised `status` or
+        `sort` is **ignored rather than refused**, and the app has to be able to
+        tell that happened, so compare what comes back with what you sent.
+      operationId: listAssignments
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: q
+          in: query
+          description: Search across the claim's title and content.
+          schema: { type: string }
+        - name: status
+          in: query
+          description: An unrecognised value is ignored and the whole queue is returned.
+          schema:
+            type: string
+            enum: [pending, in_progress, completed]
+        - name: topic
+          in: query
+          description: Filter by the claim's primary topic.
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          description: Items per page. Capped at 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 15 }
+      responses:
+        "200":
+          description: A page of assignments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Assignment" }
+                  meta:
+                    allOf:
+                      - $ref: "#/components/schemas/PageMeta"
+                      - type: object
+                        properties:
+                          stats: { $ref: "#/components/schemas/QueueStats" }
+                          q: { type: string, nullable: true }
+                          status: { type: string, nullable: true, description: "Null when no recognised status filter was applied." }
+                          topic: { type: string, nullable: true }
+                          sort: { type: string, enum: [newest, oldest] }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/assignments/{id}:
+    get:
+      tags: [Fact checker]
+      summary: One assignment, in full
+      description: |
+        The review screen. Adds the admin's brief, the name of the member who
+        submitted the claim, the checker's own working copy of the verdict, the
+        claim's evidence, and three booleans saying what may still be done.
+
+        Note the two verdicts in the payload are different things.
+        `data.claim.verdict` is the public finding, the same shape a reader
+        gets. `data.verdict` is this checker's working copy: revisable, with its
+        documents and its submission date.
+
+        Another checker's assignment, and one this checker has handed back, are
+        both simply **absent** and answer `404`. Deliberately not `403`: an
+        assignment the caller may not read should not be confirmed to exist by
+        the status code.
+      operationId: getAssignment
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The assignment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssignmentDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "404":
+          $ref: "#/components/responses/AssignmentNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/assignments/{id}/start:
+    post:
+      tags: [Fact checker]
+      summary: Pick the work up
+      description: |
+        Moves the assignment from `pending` to `in_progress`. The claim itself
+        does not change state: it was already `in_progress` from the moment an
+        admin assigned it.
+
+        **Single use.** Starting an assignment that is already started, or one
+        with a verdict on it, is a `422`. Gate the button on `can_start` from
+        the assignment payload rather than letting a stale screen post twice.
+
+        No request body.
+      operationId: startAssignment
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssignmentDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "404":
+          $ref: "#/components/responses/AssignmentNotFound"
+        "422":
+          description: The assignment is not `pending`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 422, message: "This review has already been started." } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/assignments/{id}/reject:
+    post:
+      tags: [Fact checker]
+      summary: Hand the claim back to the admin desk
+      description: |
+        Sends the claim back to `pending_assignment` for a different checker,
+        marks this assignment `rejected`, and records the reason. All three are
+        one fact, applied in one transaction: a half-applied rejection would
+        leave a claim nobody is working on and nobody has been told about.
+
+        Allowed from a review already in progress as well as from an untouched
+        one: a conflict of interest is often only visible once you start
+        reading. Refused once a verdict has been submitted.
+
+        **The assignment leaves this checker's scope on success.** The response
+        is the last look they get at it; fetching it again answers `404`, not
+        `403`. Do not navigate back to the detail screen after a rejection.
+
+        The reason is optional but worth collecting: it is what the admin reads
+        when deciding who to reassign to.
+      operationId: rejectAssignment
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejection_reason:
+                  type: string
+                  description: Why this checker cannot take it. Sent at the top level, not nested.
+            example: { rejection_reason: "I work for the organisation named in this claim." }
+      responses:
+        "200":
+          description: Handed back. `data.status` is now `rejected`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssignmentDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "404":
+          $ref: "#/components/responses/AssignmentNotFound"
+        "422":
+          description: A verdict has already been written, or the claim is no longer open for review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                alreadyCompleted:
+                  value: { error: { status: 422, message: "A verdict has already been submitted, so this assignment cannot be handed back." } }
+                claimClosed:
+                  value: { error: { status: 422, message: "This claim is no longer open for review, so it cannot be handed back." } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/assignments/{assignment_id}/verdict:
+    parameters:
+      - name: assignment_id
+        in: path
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Fact checker]
+      summary: Submit the verdict
+      description: |
+        The verdict and its supporting documents travel together, as one
+        `multipart/form-data` request:
+
+        ```
+        curl -X POST https://kasagadi.ai/api/v1/fact_checker/assignments/7/verdict \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -F "verdict[verdict]=misleading" \
+          -F "verdict[verdict_summary]=The figure is real but out of date." \
+          -F "verdict[research]=Checked against the 2024 budget statement." \
+          -F "verdict[documents][]=@budget-statement.pdf"
+        ```
+
+        Submitting completes the assignment and puts the claim in front of the
+        owner admin for approval. `published_at` stays null: the claim is not
+        live until an admin approves it.
+
+        **One verdict per claim.** A second `POST` is refused and points at
+        `PATCH`.
+      operationId: createVerdict
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: ["verdict[verdict]", "verdict[verdict_summary]", "verdict[research]"]
+              properties:
+                "verdict[verdict]":
+                  type: string
+                  enum: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+                "verdict[verdict_summary]":
+                  type: string
+                  description: The public-facing explanation. Required.
+                "verdict[research]":
+                  type: string
+                  description: Methodology and sources. Required.
+                "verdict[reference_link]":
+                  type: string
+                  description: Optional link to the primary source.
+                "verdict[documents][]":
+                  type: array
+                  description: |
+                    Optional supporting files, repeated once per file. Added to
+                    whatever is already attached; taking one off is
+                    `DELETE .../verdict/documents/{id}`.
+                  items: { type: string, format: binary }
+            encoding:
+              "verdict[documents][]":
+                style: form
+                explode: true
+      responses:
+        "201":
+          description: The assignment, now `completed`, with the verdict on it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssignmentDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "404":
+          $ref: "#/components/responses/AssignmentNotFound"
+        "422":
+          description: |
+            A verdict already exists, the claim is closed, the verdict value is
+            not one of the five, or a required field is missing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                alreadyWritten:
+                  value: { error: { status: 422, message: "This claim already has a verdict. Revise it with PATCH instead." } }
+                claimClosed:
+                  value: { error: { status: 422, message: "This claim is no longer open for a verdict." } }
+                unknownVerdict:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details: { verdict: ["is not one of the five verdicts"] }
+                missingFields:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details: { research: ["can't be blank"], verdict_summary: ["can't be blank"] }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+    patch:
+      tags: [Fact checker]
+      summary: Revise the verdict
+      description: |
+        Revisable until an admin approves it. After approval the published
+        finding must not change underneath readers, and this answers `422`.
+        Read `data.verdict.editable` before offering the edit screen.
+
+        Only the keys you send are written, so correcting a summary need not
+        resend the research you did not touch. Documents sent here are **added**
+        to what is attached, not swapped for it.
+
+        Nothing here re-announces the verdict to the admins: it is already in
+        their queue, and only the first submission notifies.
+
+        Same `multipart/form-data` shape as the `POST`, with every part
+        optional.
+      operationId: updateVerdict
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                "verdict[verdict]":
+                  type: string
+                  enum: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+                "verdict[verdict_summary]": { type: string }
+                "verdict[research]": { type: string }
+                "verdict[reference_link]": { type: string }
+                "verdict[documents][]":
+                  type: array
+                  items: { type: string, format: binary }
+            encoding:
+              "verdict[documents][]":
+                style: form
+                explode: true
+      responses:
+        "200":
+          description: The assignment, with the revised verdict.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssignmentDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "404":
+          description: |
+            No such assignment for this checker, or no verdict has been written
+            yet. Nothing to revise is a `404`, not a `422`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                noAssignment:
+                  value: { error: { status: 404, message: "Not found" } }
+                noVerdict:
+                  value: { error: { status: 404, message: "No verdict has been submitted for this claim yet." } }
+        "422":
+          description: The verdict has been approved, or the fields were rejected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                approved:
+                  value: { error: { status: 422, message: "This verdict has been approved and can no longer be edited." } }
+                unknownVerdict:
+                  value:
+                    error:
+                      status: 422
+                      message: "Validation failed"
+                      details: { verdict: ["is not one of the five verdicts"] }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /fact_checker/assignments/{assignment_id}/verdict/documents/{id}:
+    delete:
+      tags: [Fact checker]
+      summary: Remove one supporting document
+      description: |
+        Scoped through this verdict's own attachments, so a document id
+        belonging to somebody else's verdict is simply absent and answers `404`.
+
+        Refused once the verdict is approved: the documents are part of what was
+        published.
+
+        The attachment row goes immediately, so the response is already true;
+        the file itself is deleted from storage in the background. Answers with
+        the whole assignment rather than `204`.
+      operationId: deleteVerdictDocument
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: assignment_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: id
+          in: path
+          required: true
+          description: The attachment id, from `data.verdict.supporting_documents[].id`.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The assignment, without that document.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssignmentDetail" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/FactCheckersOnly"
+        "404":
+          description: No such assignment, no verdict yet, or no such document on it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                noVerdict:
+                  value: { error: { status: 404, message: "No verdict has been submitted for this claim yet." } }
+                noDocument:
+                  value: { error: { status: 404, message: "Not found" } }
+        "422":
+          description: The verdict has been approved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 422, message: "This verdict has been approved and can no longer be edited." } }
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -632,6 +1898,54 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           example: { error: { status: 429, message: "Rate limit exceeded" } }
+    MembersOnly:
+      description: |
+        The token is valid and may use the app, but this is the member tier and
+        the caller is a fact-checker. An account holding both roles counts as a
+        fact-checker here, matching the `role` `/me` hands the app.
+
+        Route on `role` from `/me` and this never appears.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 403, message: "This area is for members. Fact checkers use the fact checker portal." } }
+    FactCheckersOnly:
+      description: |
+        The token is valid and may use the app, but this is the fact-checker
+        tier and the caller is a member.
+
+        Route on `role` from `/me` and this never appears.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 403, message: "This area is for fact checkers. Members use the member portal." } }
+    ClaimNotFound:
+      description: |
+        No claim with that id among the caller's own. Another member's claim and
+        one an admin has unpublished are both absent rather than forbidden, so
+        the status code cannot confirm that a claim exists.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 404, message: "Not found" } }
+    AssignmentNotFound:
+      description: |
+        No assignment with that id among this checker's own. Another checker's
+        assignment, and one this checker has already handed back, are both
+        absent rather than forbidden.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 404, message: "Not found" } }
+    ClaimAlreadySubmitted:
+      description: |
+        The claim is no longer a draft. A submitted claim is out of the member's
+        hands, and the API refuses rather than ignoring the change, which would
+        tell the app it had worked.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 422, message: "This claim has already been submitted." } }
 
   schemas:
     Claim:
@@ -811,6 +2125,333 @@ components:
             terms: { type: string, format: uri }
             cookies: { type: string, format: uri }
       required: [api_version, min_supported_app_version, uploads, claim_statuses, verdicts, assignment_statuses, links]
+
+    MarketplaceFacets:
+      type: object
+      description: |
+        Counts of published claims, keyed by the value you would filter on. A
+        value with no published claims is absent rather than zero.
+      properties:
+        topics:
+          type: object
+          additionalProperties: { type: integer }
+          example: { Health: 12, Politics: 31 }
+        regions:
+          type: object
+          additionalProperties: { type: integer }
+          example: { "Greater Accra": 22, Ashanti: 9 }
+        verdicts:
+          type: object
+          additionalProperties: { type: integer }
+          description: Keyed by verdict name, counting only published claims.
+          example: { verdict_false: 26, misleading: 11 }
+      required: [topics, regions, verdicts]
+
+    Taxonomies:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: object
+            properties:
+              value: { type: string, description: "Send this back on a claim or a filter." }
+              label: { type: string }
+              icon: { type: string, description: "Material Symbols icon name, matching the web." }
+            required: [value, label, icon]
+        regions:
+          type: array
+          description: The sixteen regions of Ghana, in the order the pickers show them.
+          items:
+            type: object
+            properties:
+              value: { type: string }
+              label: { type: string }
+            required: [value, label]
+        verdicts:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+                enum: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+              label: { type: string, example: "Partly True" }
+            required: [value, label]
+      required: [topics, regions, verdicts]
+
+    MemberClaimInput:
+      type: object
+      description: |
+        The fields a member may write. Everything is optional on a draft; the
+        strict rules run at `POST /me/claims/{id}/submit`.
+      properties:
+        title: { type: string }
+        content: { type: string, description: "The claim being investigated." }
+        source: { type: string, description: "Where the claim was seen." }
+        topics:
+          type: array
+          items: { type: string }
+          description: |
+            One or more topic names from `/taxonomies`. The first is kept as the
+            claim's primary topic, which is what filters and badges key on.
+        regions:
+          type: array
+          items: { type: string }
+          description: "One or more region names from `/taxonomies`. The first is the primary."
+        source_links:
+          type: array
+          items: { type: string, format: uri }
+          description: "Links to where the claim was seen. Each must be a valid http(s) link."
+
+    MemberClaim:
+      type: object
+      description: |
+        A claim as its own member sees it, which is not what the marketplace
+        sees. It carries the working state and the fields the member typed,
+        including drafts nobody else may read. Still an allowlist: no internal
+        columns, nothing about which admin owns it or which checker is handling
+        it.
+      properties:
+        id: { type: integer, example: 88 }
+        title: { type: string, nullable: true, description: "Nullable while the claim is a draft." }
+        content: { type: string, nullable: true }
+        source: { type: string, nullable: true }
+        source_links:
+          type: array
+          items: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+        regions:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: [draft, pending_assignment, in_progress, published, unpublished]
+          description: |
+            `unpublished` never appears here: those claims are filtered out of
+            everything a member reads. It is listed because `/config` publishes
+            the whole enum.
+        cover_image_url:
+          type: string
+          nullable: true
+          description: "Promoted from the first image among the claim's evidence."
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        verdict:
+          allOf:
+            - $ref: "#/components/schemas/Verdict"
+          nullable: true
+          description: |
+            Present from the moment a checker submits a verdict, before an admin
+            has published it. `checked_at` stays null until publication, so use
+            `status == "published"` rather than the presence of this object to
+            decide whether the claim is live.
+      required: [id, status, topics, regions, source_links, created_at, updated_at]
+
+    MemberClaimDetail:
+      allOf:
+        - $ref: "#/components/schemas/MemberClaim"
+        - type: object
+          description: "What a single-claim read adds: the evidence the member attached."
+          properties:
+            evidences:
+              type: array
+              items: { $ref: "#/components/schemas/Evidence" }
+          required: [evidences]
+
+    Evidence:
+      type: object
+      properties:
+        id: { type: integer }
+        description: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/UploadedFile" }
+      required: [id, created_at, files]
+
+    UploadedFile:
+      type: object
+      properties:
+        id: { type: integer }
+        filename: { type: string, example: "screenshot.png" }
+        content_type:
+          type: string
+          description: "What the server identified the bytes as, not what the upload declared."
+          example: "image/png"
+        byte_size: { type: integer, example: 284133 }
+        url: { type: string, description: "Absolute, redirecting URL to the file." }
+      required: [id, filename, content_type, byte_size, url]
+
+    MemberDashboard:
+      type: object
+      properties:
+        filter:
+          type: string
+          description: The filter actually applied, after falling back to `all`.
+          example: "all"
+        counts: { $ref: "#/components/schemas/MemberClaimCounts" }
+        claims:
+          type: array
+          items: { $ref: "#/components/schemas/MemberClaim" }
+      required: [filter, counts, claims]
+
+    MemberClaimCounts:
+      type: object
+      description: |
+        Counts across the member's own claims, excluding unpublished ones.
+        `review` is the same number as `in_progress`: the web dashboard has
+        always offered both names for the same tab.
+      properties:
+        all: { type: integer, description: "Every claim except drafts." }
+        drafts: { type: integer }
+        pending: { type: integer, description: "Submitted, waiting for an admin to assign a checker." }
+        in_progress: { type: integer }
+        review: { type: integer, description: "The same number as `in_progress`." }
+        verified: { type: integer, description: "Published." }
+      required: [all, drafts, pending, in_progress, review, verified]
+
+    Assignment:
+      type: object
+      description: A claim handed to a fact-checker, as the queue shows it.
+      properties:
+        id: { type: integer, example: 7 }
+        status:
+          type: string
+          enum: [pending, in_progress, completed, rejected]
+          description: "`rejected` only ever appears in the response to a reject; it is never in the queue."
+        due_date: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        claim:
+          allOf:
+            - $ref: "#/components/schemas/MemberClaim"
+          description: "The submission as the member wrote it, so a checker sees exactly what was submitted."
+      required: [id, status, created_at, updated_at, claim]
+
+    AssignmentDetail:
+      allOf:
+        - $ref: "#/components/schemas/Assignment"
+        - type: object
+          properties:
+            claim:
+              allOf:
+                - $ref: "#/components/schemas/MemberClaimDetail"
+              description: "The claim, with the member's evidence attached."
+            notes: { type: string, nullable: true, description: "The admin's brief to this checker." }
+            rejection_reason: { type: string, nullable: true }
+            submitted_by:
+              type: object
+              description: |
+                The name and nothing else. A checker needs to know whose claim
+                they are checking, not how to contact them.
+              properties:
+                name: { type: string, nullable: true }
+            verdict:
+              allOf:
+                - $ref: "#/components/schemas/WorkingVerdict"
+              nullable: true
+              description: |
+                This checker's working copy, which is not `claim.verdict`. That
+                one is the public finding a reader gets; this one carries the
+                record id, whether it can still be revised, when it was
+                submitted as distinct from when it went live, and the documents
+                behind it.
+            can_start: { type: boolean, description: "True only while the assignment is `pending`." }
+            can_reject: { type: boolean, description: "False once a verdict exists or the claim is no longer open for review." }
+            verdict_editable:
+              type: boolean
+              description: |
+                Before there is a verdict, true until the assignment is
+                completed. After there is one, true until an admin approves it.
+          required: [notes, rejection_reason, submitted_by, verdict, can_start, can_reject, verdict_editable]
+
+    WorkingVerdict:
+      type: object
+      description: A verdict as the checker who wrote it sees it.
+      properties:
+        id: { type: integer }
+        verdict:
+          type: string
+          enum: [verdict_true, verdict_false, misleading, partly_true, unverifiable]
+        verdict_label: { type: string, example: "Partly True" }
+        summary: { type: string, description: "The public-facing explanation. Written as `verdict[verdict_summary]`." }
+        research: { type: string }
+        reference_link: { type: string, nullable: true }
+        editable:
+          type: boolean
+          description: |
+            False once an admin has approved it. From then on the public copy
+            must not change underneath readers.
+        submitted_at: { type: string, format: date-time }
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Null until an admin approves. The two dates differ."
+        supporting_documents:
+          type: array
+          items: { $ref: "#/components/schemas/UploadedFile" }
+      required: [id, verdict, verdict_label, summary, research, editable, submitted_at, supporting_documents]
+
+    WorkingVerdictWithClaim:
+      allOf:
+        - $ref: "#/components/schemas/WorkingVerdict"
+        - type: object
+          description: |
+            What the dashboard's recent verdicts add. They are listed on their
+            own rather than under the claim they belong to, so they have to say
+            which claim that is.
+          properties:
+            claim:
+              type: object
+              properties:
+                id: { type: integer }
+                title: { type: string, nullable: true }
+                status: { type: string }
+            assignment_id: { type: integer, nullable: true }
+          required: [claim, assignment_id]
+
+    QueueStats:
+      type: object
+      description: The three tab counts, always across the whole queue rather than the current filter.
+      properties:
+        assigned: { type: integer, description: "Assignments still `pending`." }
+        in_review: { type: integer }
+        completed: { type: integer }
+      required: [assigned, in_review, completed]
+
+    FactCheckerDashboard:
+      type: object
+      properties:
+        stats:
+          type: object
+          properties:
+            pending: { type: integer }
+            in_progress: { type: integer }
+            completed: { type: integer, description: "Assignments where a verdict was written, approved or not." }
+            published: { type: integer, description: "Verdicts on claims that actually reached the marketplace." }
+          required: [pending, in_progress, completed, published]
+        verdict_breakdown:
+          type: object
+          additionalProperties: { type: integer }
+          description: |
+            This checker's verdicts, keyed by verdict name. A verdict they have
+            never reached is absent rather than zero.
+          example: { verdict_false: 9, misleading: 4 }
+        active_assignments:
+          type: array
+          maxItems: 5
+          description: "Pending and in-progress work, oldest first."
+          items: { $ref: "#/components/schemas/Assignment" }
+        recent_verdicts:
+          type: array
+          maxItems: 5
+          description: "Newest submission first, since `published_at` is null for anything still awaiting approval."
+          items: { $ref: "#/components/schemas/WorkingVerdictWithClaim" }
+      required: [stats, verdict_breakdown, active_assignments, recent_verdicts]
 
     PageMeta:
       type: object

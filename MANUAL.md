@@ -145,14 +145,14 @@ fact checker, and the assigned / completed / published dates.
 - **Evidence** — many per claim. Description plus optional file attachments (images, videos,
   PDFs via Active Storage). Members add evidence when submitting.
 - **Assignment** — one per claim. Tracks the fact checker, the assigning admin
-  (`assigned_by`), due date, notes, and status. Fires `ClaimMailer.assigned` on creation and
-  on a fact-checker swap (not on same-checker re-saves).
+  (`assigned_by`), due date, notes, and status. Notifies the fact checker on creation and on
+  a fact-checker swap, not on same-checker re-saves, and never for an imported claim (§14).
 - **Verification** — one per claim. The fact checker's verdict (`true`, `false`,
   `misleading`, `partly_true`, `unverifiable`), summary, research write-up, reference link,
   and `published_at` (stamped when the owner admin approves — *not* at verdict submission).
 - **AuditLog** — an immutable, append-only event record. One row per consequential action:
   who did it (`actor`), what (`action`), to which record (polymorphic `auditable`), and
-  metadata. See §8.
+  metadata. See §9.
 
 ---
 
@@ -167,8 +167,8 @@ fact checker, and the assigned / completed / published dates.
 3. **Submit** runs the `submit` event → `pending_assignment` (validated). **Save draft**
    keeps it as `draft` with relaxed validation.
 4. Drafts can be edited/destroyed; submitted claims cannot.
-5. On publication the member receives `ClaimMailer.published`.
-6. A **suspended** member cannot sign in at all (see §7).
+5. On publication the member is told, in the app and by email and SMS (§14).
+6. A **suspended** member cannot sign in at all (see §8).
 
 ### 6.2 Fact checker
 
@@ -227,9 +227,9 @@ by a database partial-unique index. They keep full admin abilities and gain an
    **Drafts** tab and drafts in "All" (full platform visibility). Still read-only oversight —
    they can only publish/transfer claims they personally own.
 5. **Audit Log** (`/super_admins/audit_logs`) — the full activity feed, filterable by actor
-   and date range (see §8).
+   and date range (see §9).
 
-Provisioning the Super Admin is an operations task — see §11.
+Provisioning the Super Admin is an operations task, see §12.
 
 ### 6.5 Public visitor
 
@@ -350,7 +350,7 @@ completed Claim #100", "Admin A transferred Claim #101 to Admin C".
 - **Sessions** — cookie-based; a signed cookie holds a `Session.id` stored in the DB, so
   sessions can be terminated server-side. Every request is gated by
   `Authentication#require_authentication` unless a controller opts out with
-  `allow_unauthenticated_access`. Suspended users are rejected at login and on resume (§7).
+  `allow_unauthenticated_access`. Suspended users are rejected at login and on resume (§8).
 - **Role gating** — role-namespaced base controllers (`Members::BaseController`,
   `FactCheckers::BaseController`, `Admins::BaseController`) enforce the role via
   `before_action`. `SuperAdmins::BaseController` inherits the admin gate and adds
@@ -425,15 +425,239 @@ active admin. The receiving admin then sees it in their "Awaiting approval" / ow
 
 ## Email & background jobs
 
-- **Mailers**: `ClaimMailer` (assigned, published), `InvitationMailer`, `PasswordsMailer`.
-- All dispatches use `deliver_later`, queued through Solid Queue (database-backed Active Job;
-  runs in-process when `SOLID_QUEUE_IN_PUMA=1`).
-- Triggers:
-  - `ClaimMailer.assigned` — `Assignment` `after_create_commit` and on fact-checker change.
-  - `ClaimMailer.published` — Claim `approve` event `after_commit`.
-  - `InvitationMailer` — explicit dispatch in the invitations controller.
-  - `PasswordsMailer.reset` — `PasswordsController#create` and the Super Admin reset action
-    (both skip suspended users).
+- **Mailers**: `ClaimMailer` (`assigned`, `reassigned`, `published`, `verdict_published`),
+  `InvitationMailer`, `PasswordsMailer` (`reset`, `reset_code`).
+- **Queue**: Solid Queue, database-backed Active Job, running in-process when
+  `SOLID_QUEUE_IN_PUMA=1`.
+- **Claim mail is no longer dispatched from the model.** All four `ClaimMailer` methods are
+  reached through notifiers, so the email and the in-app row are one event rather than two
+  code paths that can come to disagree about who was told what. See §14.
+- The notifier's email method calls `deliver_now` from inside its own delivery job, on
+  purpose: `deliver_later` would return as soon as the mail was queued, and the delivery log
+  would stamp the row `sent` for a message that had not yet been handed to a mail server.
+- The remaining direct dispatches are not notifications about a claim, and do use
+  `deliver_later`:
+  - `InvitationMailer.invite`, from the invitations controller, on create and on resend.
+  - `PasswordsMailer.reset`, from `PasswordsController#create`, the Super Admin's admin
+    reset, and an admin's member reset. All three skip suspended users.
+  - `PasswordsMailer.reset_code`, from the mobile API's password-reset endpoint.
+
+---
+
+## Notifications
+
+Ten things can happen to a claim that somebody needs to hear about. Each one is a
+**notifier** under `app/notifiers/`, and each decides three things: who it reaches, what it
+says, and which channels carry it.
+
+Every one of the ten writes to the recipient's in-app feed. Only **four** also send an
+email, and only **three** also send an SMS. That restraint is deliberate: email and SMS
+interrupt a person, SMS costs money, and both are spent only where a delay has a cost.
+
+### 14.1 The ten events
+
+| Notifier | Fires when | Who hears it | In app | Email | SMS |
+|---|---|---|:---:|:---:|:---:|
+| `ClaimSubmittedNotifier` | A member submits a claim | That member | ✅ | ✗ | ✗ |
+| `NewSubmissionNotifier` | The same submission | The admin desk | ✅ | ✗ | ✗ |
+| `ClaimAssignedNotifier` | An admin assigns a fact checker, and again when a different one is put on it | The fact checker | ✅ | ✅ | ✅ |
+| `ClaimInReviewNotifier` | The `assign_checker` transition | The member | ✅ | ✗ | ✗ |
+| `ClaimReassignedNotifier` | An admin hands the claim to a different checker | The **previous** checker | ✅ | ✅ | ✅ |
+| `AssignmentRejectedNotifier` | A checker hands the claim back | The admin desk | ✅ | ✗ | ✗ |
+| `VerdictAwaitingApprovalNotifier` | A verdict is created | The admin desk | ✅ | ✗ | ✗ |
+| `ClaimPublishedNotifier` | The owner admin approves, and again on republish | The member | ✅ | ✅ | ✅ |
+| `VerdictPublishedNotifier` | That same approval | The checker who wrote the verdict | ✅ | ✅ | ✗ |
+| `ClaimUnpublishedNotifier` | The owner admin unpublishes | The member | ✅ | ✗ | ✗ |
+
+The four email notifiers reach `ClaimMailer` through `DeliveryMethods::Email`, which is why
+`ClaimMailer` has exactly four methods: `assigned`, `reassigned`, `published`,
+`verdict_published`.
+
+What the table cannot show:
+
+- **"The admin desk" is not always everyone.** `ClaimNotifier#admin_users` sends to the
+  claim's owner admin when it has one and to every active admin otherwise, because a fresh
+  submission belongs to nobody yet. A suspended owner falls back to the whole desk as well:
+  a suspended account cannot open its feed, and a staffing change must not be the reason a
+  claim goes unnoticed.
+- **Suspended users are never in an audience.** They cannot sign in, so a notification
+  addressed to them would be written into a feed nobody can open.
+- **An empty audience writes nothing at all.** The `noticed` gem treats an empty relation as
+  truthy and would save the event anyway, leaving a row addressed to nobody for the admin
+  ledger to render and a delivery job chasing it. Where a notifier worked its own audience
+  out and found nobody, it reports a `ClaimNotifier::UnreachableAudience` to `Rails.error`:
+  a claim needing attention was announced to an empty room, and every admin being suspended
+  is the case that motivated it.
+- **Reassignment is dispatched from the controller, not from a callback.** The recipient is
+  the *previous* checker, and by the time the `Assignment` row is saved it already points at
+  the new one.
+- **`ClaimInReviewNotifier` says "assigned", not "started".** It fires on `assign_checker`,
+  while the assignment is still `pending` and the checker can still hand it back. The class
+  name predates the distinction and is kept because the persisted `type` column carries it.
+- **The assignment email is guarded, the in-app row is not.** The mailer addresses whoever
+  holds the assignment when the job runs, so a second reassignment inside job latency would
+  mail the wrong checker; the email is skipped in that case. The in-app row stands either
+  way, because it is history and correct as written.
+- **A verdict announces itself once.** `Verification` notifies on create only. It stays
+  revisable while it waits on an admin, and re-announcing every edit would turn the approval
+  queue into noise.
+- **Republishing reuses the publication notifier** rather than adding an eleventh. Without
+  that, a member would hear their claim was pulled and never hear it came back.
+- **A notification failure never takes down what caused it.** `ClaimNotifier.notify` rescues,
+  reports to `Rails.error` and returns nil. These run from `after_commit` hooks and from
+  controller actions, so the claim is already saved: raising would show a 500 for something
+  that actually worked, and would strand every recipient queued behind the one that failed.
+
+### 14.2 Imported claims notify nobody
+
+Dubawa imports carry an `external_source`, which is what `Claim#imported?` reads.
+`ClaimNotifier#deliver` returns before anything is written for such a claim, on every
+channel, for every recipient.
+
+Two reasons. Nobody asked for the work, so nobody is waiting on the answer. And the member
+on an imported claim is a service account that never signs in, so anything addressed to it
+goes into a feed with no reader. Without the rule, a single import would put one "verdict
+awaiting approval" in front of every admin for every row, because Dubawa imports create a
+verification per claim.
+
+The rule lives in the base class rather than at each call site, so a new notifier cannot
+forget it. `Assignment` checks `imported?` a second time before it builds the event, which
+buys nothing in behaviour and only avoids constructing something nobody would read.
+
+### 14.3 The delivery log
+
+`noticed` records that a recipient was notified. It records nothing about whether the copy
+left, which provider carried it, or what it said. `NotificationDelivery` is that record: one
+row per outbound copy, per channel.
+
+`ApplicationDeliveryMethod` wraps every channel in an `around_deliver`, so the row is
+created **before** the send and stamped after it. A crash mid-flight still leaves a trace,
+and no channel has to remember to write to the log.
+
+| Status | Means |
+|---|---|
+| `queued` | The row exists; the send has not come back |
+| `sent` | The channel handed the message off |
+| `delivered` | The telco confirmed it reached the handset (SMS only) |
+| `failed` | The send raised, or the telco reported a failure |
+| `skipped` | The channel declined to send, and said why |
+
+`skipped` is the one that needs stating: it is a decision, not a failure. It is what an
+unusable phone number produces. A delivery method declines by calling `skip!` from inside
+`deliver`; halting a `before_deliver` chain instead would return normally through
+`around_deliver` and stamp the row `sent` for a send that never happened.
+
+Each row also carries `destination`, `subject`, `body`, `provider_message_id`,
+`provider_status`, `error`, `sent_at` and `delivered_at`. The email method archives the
+rendered subject and body **before** delivering, so the ledger holds the message as the
+recipient saw it rather than a reconstruction of it.
+
+### 14.4 What an admin sees
+
+`/admins/notifications` is the ledger. Five numbers sit above the rows and answer the
+question the page exists to ask: **sent** (every notification), **reached** (`sent` plus
+`delivered`), **failed**, **unreachable** (`skipped`), and **in app only** (notifications
+with no delivery rows at all, which is six of the ten notifiers).
+
+Each row is one notification: the recipient and their role, the title, and two fixed channel
+slots, email then SMS, always in that order. A channel that was never used reads as an
+absence in a place the eye already knows to look, so the column can be scanned rather than
+read. Colour carries the state, and nothing else on the page carries colour.
+
+Opening a row shows the recipient, the notifier, whether they have read it, and every
+outbound attempt with its own status. An archived email body renders inside a sandboxed
+frame, so its styles stay out of the page and nothing in it can run. An SMS body renders at
+the width it was written for with its character count beneath it, so its length reads
+honestly against the 160-character segment. A folded "delivery trail" carries the provider
+id, the telco status and the timestamps.
+
+The log keeps one row per **attempt**, so a send that failed and then succeeded on retry has
+two rows on the same channel. The index shows the newest attempt per channel, which is where
+that channel ended up.
+
+Every signed-in user reads their own feed at `/notifications`, whatever their role. Opening
+a notification is what marks it read, so the click goes through the app rather than straight
+to the subject; a notification whose record has since been deleted lands back on the feed
+instead of raising.
+
+### 14.5 SMS through Hubtel, and the switch that keeps it quiet
+
+SMS goes out through **Hubtel** (`lib/hubtel/`), using Regular Send, a POST with Basic auth,
+rather than Quick Send, whose GET variant carries the client secret in the query string
+where it lands in server logs, proxy logs and error-tracker breadcrumbs.
+
+**The switch is `config.x.sms.enabled`, set per environment:**
+
+| Environment | `config.x.sms.enabled` |
+|---|---|
+| development | `true` |
+| test | `false` |
+| production | `true` |
+
+Credentials are deliberately **not** the switch. There is a single credentials file, so the
+production Hubtel account resolves in development too, and "has credentials" would mean the
+channel silently switched itself on wherever the app ran.
+
+Read the development row again, because it means what it says: **assigning a claim on your
+own machine sends a real, charged SMS to whatever number is on that fact checker's
+profile.** If you are working through the assignment flow locally, either blank the phone
+numbers on your local records or set `config.x.sms.enabled = false` in
+`config/environments/development.rb` while you do it. A switched-off channel is not a
+skipped delivery, it is a channel that does not exist, so it records nothing at all: an
+empty SMS column in the ledger on a machine with SMS off is correct, not a bug.
+
+**The ceiling is five requests a minute, across all of Hubtel's endpoints.** Sends and
+delivery-receipt polls draw on the same budget (`Hubtel::REQUESTS_PER_MINUTE = 5`).
+`Hubtel::RateLimiter` keeps a sliding window over the last minute in the cache and is checked
+*before* the delivery row is created, because a throttle bounce is not a failed delivery and
+recording it as one would fill the ledger with alarms for messages that go out fine a moment
+later. A throttled job is re-enqueued, waiting exactly as long as the limiter says a slot
+needs, for up to **eight attempts**; on exhaustion the job writes the one row that keeps a
+message we gave up on from looking like a message we never had to send, reading
+"Throttled, gave up after 8 attempts".
+
+The limiter is best effort, not a guarantee. Read, filter and write are three steps rather
+than an atomic increment, and Solid Cache offers no atomic list primitive, so concurrent
+workers can each see the same free slot. It also fails open: a cache outage reads as "no
+recent requests" and lets everything through. Both are the right way round, because Hubtel
+itself is the real enforcement. It answers `429`, the client raises `Hubtel::RateLimited`,
+and the job retries. The test environment uses `:null_store`, which makes the limiter inert
+there unless a real store is injected.
+
+Three more behaviours that are easy to miss:
+
+- **A number that cannot be placed is a `skipped` row, not a failure.** `PhoneNumber.e164`
+  returns nil rather than guessing, because a wrong number sends someone else's claim details
+  to a stranger. The row reads "No usable phone number on file". Phone lives on the role
+  rather than on the user, so a recipient's fact-checker number is preferred and their member
+  number is the fallback.
+- **Curly punctuation is traded for ASCII before sending.** A segment is 160 characters in
+  GSM-7 but only 70 in UCS-2, and one curly quote or dash in a claim title switches the whole
+  message over and triples the bill. Claim titles are quoted from the wild, so that is the
+  ordinary case rather than a rare one. The copy truncates the title to 70 characters for the
+  same reason.
+- **Only a connection failure is retried.** A read timeout means the POST went out and the
+  reply was lost, so the message has most likely been sent and charged for; retrying would
+  bill up to three times and put three copies on the handset. One `failed` row an admin can
+  act on is the lesser harm.
+
+**Delivery receipts.** Hubtel's send response only confirms Hubtel took the message, and a
+2xx is not enough on its own: a rejection arrives as a 2xx carrying a non-zero status and a
+description, so acceptance is the payload status, not the HTTP code. `HubtelStatusJob` asks
+for the telco's verdict a minute after the send, and re-checks up to three times, ten minutes
+apart. `delivered` and `failed` are final; "Pending" and "Sent" are not. A row that never
+settles keeps its `sent` status and its raw provider status, which is the honest description
+of what we know.
+
+### 14.6 Where the copy lives
+
+`config/locales/notifiers.en.yml`, scoped by the generated notification class:
+`ClaimAssignedNotifier::Notification` reads `notifiers.claim_assigned_notifier.notification`.
+Every entry has a `title` and a `body`, and the three SMS notifiers add an `sms` line.
+
+Claim titles are often whole sentences, so they are quoted inside body copy to keep the
+surrounding sentence readable: "New claim assigned to you" over
+`"Free bus fares for students in September" is now in your queue.`
 
 ---
 
@@ -582,6 +806,8 @@ generator.
 |---|---|---|
 | `/api/v1/claims` | GET | Paginated list of published claims (`{ data, meta }`). |
 | `/api/v1/claims/:id` | GET | A single published claim (`{ data }`); `404` if not published. |
+| `/api/v1/claims/:id/related` | GET | Up to three other published claims sharing the claim's primary topic (`{ data }`, no `meta`). |
+| `/api/v1/marketplace/facets` | GET | Published-claim counts per topic, region and verdict, keyed by the value you would filter on. A value with no published claims is absent rather than zero. |
 
 **List filters** (all optional): `topic`, `region`, `verdict`
 (`verdict_true` / `verdict_false` / `misleading` / `partly_true` / `unverifiable`),
@@ -619,12 +845,16 @@ with the answer**. Each journey follows one person through one task.
 - **Base URL:** `https://kasagadi.ai/api/v1`
 - **Credential:** an access token from `POST /auth/login`, sent as
   `Authorization: Bearer <access_token>`. The app ships **no** API key. The partner key
-  described in §20 is a different credential for a different audience: never put one in
+  described in §21 is a different credential for a different audience: never put one in
   the app.
 - **Two roles reach the app:** members of the public, and accredited fact-checkers.
   Administrators are refused and told to use the web portal.
+- **Three tiers of endpoint.** `/claims`, `/claims/:id`, `/claims/:id/related` and
+  `/marketplace/facets` take either credential. `/me`, `/taxonomies` and `/auth/logout` take
+  any user token. Everything under `/me/claims` is members only and everything under
+  `/fact_checker` is fact-checkers only, each refusing the other role with `403` (§22.15).
 
-### 21.1 The two tokens, in one paragraph
+### 22.1 The two tokens, in one paragraph
 
 Signing in returns a pair. The **access token** rides on every request and lasts
 **30 minutes**. The **refresh token** does nothing but buy a new pair, and lasts
@@ -637,7 +867,7 @@ preferences, and never write either into a log.
 | `access_token` | 30 minutes | Every authenticated request |
 | `refresh_token` | 30 days, rolling | Only `POST /auth/refresh` |
 
-### 21.2 Kofi opens the app for the first time
+### 22.2 Kofi opens the app for the first time
 
 *Kofi has just installed Kasagadi. He hasn't signed in and hasn't tapped anything.*
 
@@ -673,7 +903,7 @@ type does not require an app release. Compare the running build against
 **Do not** ship a fallback copy of these values that silently replaces a failed call. If
 `/config` is unreachable, say so and retry: guessing the limits is how the two drift apart.
 
-### 21.3 Kofi creates a member account
+### 22.3 Kofi creates a member account
 
 *Kofi wants to submit a claim he saw on WhatsApp, so he needs an account.*
 
@@ -706,7 +936,7 @@ POST /api/v1/auth/register
 carries a usable pair, so go straight to the member home screen. Do not call `/auth/login`
 afterwards.
 
-**Only members self-register.** Fact-checkers arrive by invitation (§21.8), so the app
+**Only members self-register.** Fact-checkers arrive by invitation (§22.11), so the app
 needs no "sign up as a fact-checker" path.
 
 **Password rules,** worth enforcing in the form so Kofi finds out before the round trip:
@@ -723,7 +953,7 @@ omitting it is rejected rather than skipping the check.
 Map `details` onto the form fields. Every key is an attribute name and every value is a
 list of messages, so the shape is stable enough to render generically.
 
-### 21.4 Ama signs in, and the app works out where to send her
+### 22.4 Ama signs in, and the app works out where to send her
 
 *Ama already has an account. She may be a member or a fact-checker; the app does not know
 which until the server says so.*
@@ -757,7 +987,7 @@ control, and forging the list gains nothing.
 Note that the password must already be correct before either `403` appears, so these
 cannot be used to discover whether an address has an account.
 
-### 21.5 Ama comes back the next morning
+### 22.5 Ama comes back the next morning
 
 *Ama used the app at 9am and opens it again at 2pm. Her access token expired hours ago.*
 
@@ -792,7 +1022,14 @@ spent token and get `401`, which will look like a broken session. **Single-fligh
 refresh:** the first caller refreshes, the others wait for it and replay with the new
 token.
 
-### 21.6 Ama forgets her password
+**The old access token dies with the old refresh token.** Rotation is re-issuance: the same
+session row is rewritten, so the access token the app was carrying stops working the moment
+the refresh returns, whether or not it had minutes left on it. A live smoke test caught a
+client that stored the new refresh token, kept using the old access token, and then failed
+`401` on every subsequent request while looking like a server fault. Swap **both** together,
+before replaying anything.
+
+### 22.6 Ama forgets her password
 
 *Ama is locked out. She is on a phone, so an emailed link is unreliable: it may open on a
 laptop, or in a browser with no route back into the app.*
@@ -849,7 +1086,7 @@ The code **expires in 15 minutes**, works **once**, and dies after **five wrong 
 - `401` "That reset code is invalid or has expired." — wrong, expired, already used, or
   five attempts burned. Send her back to step one for a fresh code.
 
-### 21.7 Kofi signs out
+### 22.7 Kofi signs out
 
 ```
 DELETE /api/v1/auth/logout
@@ -867,7 +1104,219 @@ Clear the keychain when the response arrives. If the request fails on the networ
 anyway and move on: the token is short-lived, and the server-side row is cleaned up on
 expiry.
 
-### 21.8 Akosua the fact-checker signs in
+### 22.8 Kofi writes a claim, attaches a photo, and submits it
+
+*Kofi has a screenshot of the WhatsApp broadcast. This is the whole reason he installed the
+app.*
+
+Three requests, in this order. There is no signed-upload handshake and no separate commit
+step: **the bytes go in the same request that creates the evidence.**
+
+**Step one, the draft.** Nothing is required yet, so a half-written claim survives a bad
+connection.
+
+```
+POST /api/v1/me/claims
+Authorization: Bearer <access_token>
+
+{ "claim": {
+  "title": "Free bus fares for students in September",
+  "content": "A WhatsApp broadcast says the Ministry has approved free bus fares…",
+  "source": "WhatsApp",
+  "topics": ["Education"],
+  "regions": ["Greater Accra"],
+  "source_links": ["https://example.com/post/1"]
+} }
+```
+
+`201 Created`, and the body is the whole claim with an empty evidence list:
+
+```json
+{ "data": { "id": 88, "title": "Free bus fares for students in September",
+            "status": "draft", "topics": ["Education"], "regions": ["Greater Accra"],
+            "source_links": ["https://example.com/post/1"],
+            "cover_image_url": null, "verdict": null,
+            "created_at": "2026-08-01T09:12:00Z", "updated_at": "2026-08-01T09:12:00Z",
+            "evidences": [] } }
+```
+
+Take `topics` and `regions` from `/taxonomies`: send the `value`, show the `label`. Only
+`source_links` are checked at this stage, and each must be a valid `http` or `https` link.
+
+**Step two, the photo.** One `multipart/form-data` request:
+
+```bash
+curl -X POST https://kasagadi.ai/api/v1/me/claims/88/evidences \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "evidence[files][]=@broadcast.jpg" \
+  -F "evidence[description]=The message as it arrived"
+```
+
+`201 Created`, and the body is the **whole claim again**, so the app redraws its evidence
+list from the response and never has to follow a write with a read:
+
+```json
+{ "data": { "id": 88, "status": "draft",
+  "cover_image_url": "https://kasagadi.ai/rails/active_storage/blobs/redirect/…/broadcast.jpg",
+  "evidences": [
+    { "id": 15, "description": "The message as it arrived",
+      "created_at": "2026-08-01T09:14:00Z",
+      "files": [ { "id": 31, "filename": "broadcast.jpg", "content_type": "image/jpeg",
+                   "byte_size": 284133,
+                   "url": "https://kasagadi.ai/rails/active_storage/blobs/redirect/…/broadcast.jpg" } ] } ] } }
+```
+
+Note that `cover_image_url` filled itself in. A claim's cover is promoted from the first
+image among its evidence, which is why there is no separate cover upload.
+
+Four things about that request:
+
+- **Repeat `evidence[files][]` once per file.** Several files in one request become one
+  evidence row with several files under it.
+- **Evidence is added, never replaced.** A member photographs one thing at a time, and a
+  phone that loses signal halfway through a set must not wipe what already uploaded. Send a
+  second request for the receipt.
+- **The server decides what a file really is.** Every upload is identified from its own
+  bytes, not from the content type the request declared, so a payload renamed to `.png` is
+  refused even though the request called it an image.
+- **Read the limits from `/config`**, under `uploads.evidence`: today 10MB a file, and
+  "JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG". Do not hard-code either.
+
+Refusals are per file and name the file:
+
+```json
+{ "error": { "status": 422, "message": "Validation failed",
+             "details": { "files": ["\"clip.wav\" is larger than 10MB"] } } }
+```
+
+An unsupported format reads `"notes.exe" is not a supported format. Attach JPG, PNG, WebP,
+GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG`, and a file that is both unsupported and oversized
+says both. Sending no usable file at all, a file field submitted with nothing chosen
+included, gives `{ "files": ["Attach at least one file."] }`. Omitting the `evidence` part
+altogether is a different thing: `400` with `Missing parameter: evidence`. A missing envelope
+is a malformed request, not a validation failure about its contents.
+
+**Step three, submit.** No body at all.
+
+```
+POST /api/v1/me/claims/88/submit
+```
+
+`200`, and `status` is now `pending_assignment`. This is where the strict rules run: title,
+content, source, at least one topic, at least one region, **and at least one piece of
+evidence with a file actually attached**. Only once all of that passes does the claim change
+state, so it can never reach the queue half-finished.
+
+The refusal for the last of those arrives under `base` rather than under a field, because it
+is about the claim as a whole:
+
+```json
+{ "error": { "status": 422, "message": "Validation failed",
+             "details": { "base": ["Please attach at least one piece of evidence with a supporting file."] } } }
+```
+
+Render `details.base` as a form-level message. Every other key is an attribute name, so one
+renderer covers both.
+
+**Submit once.** The call queues the AI analysis and tells both Kofi and the admin desk. A
+second submit answers `422` and `This claim has already been submitted.`
+
+### 22.9 Ama follows a claim from her dashboard to a published verdict
+
+*Ama submitted a claim last week and wants to know where it has got to.*
+
+```
+GET /api/v1/me/dashboard
+```
+
+```json
+{ "data": {
+    "filter": "all",
+    "counts": { "all": 7, "drafts": 2, "pending": 1, "in_progress": 3, "review": 3, "verified": 3 },
+    "claims": [ { "id": 88, "status": "in_progress", "verdict": null } ] },
+  "meta": { "page": 1, "per_page": 10, "total_pages": 1, "total_count": 7 } }
+```
+
+Three things to know about those numbers:
+
+- **`all` excludes drafts.** That is the web's meaning of the word, and drafts have their own
+  tab. `?filter=drafts` is how you get them.
+- **`review` is the same number as `in_progress`.** The web dashboard has always offered both
+  names for the same tab, and the API keeps both rather than making one platform lie.
+- **`data.filter` is the filter that was actually applied.** An unrecognised value falls back
+  to `all` rather than being refused, so read it back instead of assuming.
+
+`GET /me/claims` is the same list without the counts, taking the same `filter` names and
+paging 15 at a time rather than 10. Neither list carries `evidences`: no list screen shows
+them and they would be paid for in queries. `GET /me/claims/88` does carry them.
+
+**How the state reads on screen.** Ama's copy of the claim carries the verdict from the
+moment a checker submits it, which is before an admin has approved it. So:
+
+| What Ama should be shown | `status` | `verdict` |
+|---|---|---|
+| Saved, not sent | `draft` | `null` |
+| Waiting for a fact checker | `pending_assignment` | `null` |
+| Being checked | `in_progress` | `null` |
+| Checked, waiting on approval | `in_progress` | present, `checked_at` null |
+| Live on the marketplace | `published` | present, `checked_at` set |
+
+**Do not read "a verdict exists" as "the claim is published."** A verdict awaiting approval
+can still be discarded if an admin reassigns the claim, so gate the "fact checked" badge on
+`status == "published"` and take the date it went live from `verdict.checked_at`.
+
+**A claim can also vanish.** An admin can unpublish one, and unpublished claims are filtered
+out of everything a member reads: it drops off the dashboard, and `GET /me/claims/88` starts
+answering `404`. The platform does tell Ama, but there is no notifications endpoint in the
+mobile API yet, so the app cannot show her that. Treat a `404` on a claim you were already
+displaying as a stale screen: return to the list rather than showing an error.
+
+### 22.10 Kofi edits one draft, discards another, and is refused on a third claim
+
+*Kofi has two drafts and one claim he sent yesterday.*
+
+**Editing a draft** is a `PATCH`, and only the keys sent are written, so an app correcting a
+title need not resend the body:
+
+```
+PATCH /api/v1/me/claims/88
+{ "claim": { "title": "Free bus fares for students from September" } }
+```
+
+`200` with the whole claim back, evidence included.
+
+**Removing one piece of evidence** is a `DELETE` on the evidence row, and it also answers
+with the whole claim rather than `204`, so the app gets back the list it should now be
+showing:
+
+```
+DELETE /api/v1/me/claims/88/evidences/15
+```
+
+The cover image is deliberately **not** cleared when the evidence it came from is removed. It
+is a copy taken at promotion time, not a reference to that file, and the web behaves the same
+way.
+
+**Discarding a draft** is permanent, and takes its evidence and their uploads with it:
+
+```
+DELETE /api/v1/me/claims/88
+```
+
+`204 No Content`.
+
+**And the wall.** All three of those are refused the moment the claim leaves `draft`:
+
+```json
+{ "error": { "status": 422, "message": "This claim has already been submitted." } }
+```
+
+That is a `422` rather than a `403`, and the distinction is real: the claim is still his, he
+simply cannot change it any more. It is in the platform's queue and somebody may already be
+working on it. Hide the edit and delete controls once `status` is anything but `draft`, and
+treat the `422` as the backstop for a stale screen rather than as the primary check.
+
+### 22.11 Akosua the fact-checker signs in
 
 *Akosua has been accredited by Kasagadi. She never registered.*
 
@@ -886,7 +1335,133 @@ single-use link, §6.2), which creates the account. From then on she uses the sa
 Note `profile` carries different keys per role — `specialty` and `verified` exist only for
 fact-checkers. Read it by role, not as a fixed shape.
 
-### 21.9 Kwame the administrator tries the app
+### 22.12 Akosua works through an assignment
+
+*Akosua has been handed a claim. She has not opened it yet.*
+
+```
+GET /api/v1/fact_checker/assignments
+```
+
+```json
+{ "data": [ { "id": 7, "status": "pending", "due_date": "2026-08-10T00:00:00Z",
+              "created_at": "2026-08-02T08:00:00Z", "updated_at": "2026-08-02T08:00:00Z",
+              "claim": { "id": 88, "title": "Free bus fares for students in September",
+                         "status": "in_progress", "verdict": null } } ],
+  "meta": { "stats": { "assigned": 3, "in_review": 1, "completed": 12 },
+            "q": null, "status": null, "topic": null, "sort": "newest",
+            "page": 1, "per_page": 15, "total_pages": 1, "total_count": 4 } }
+```
+
+`meta.stats` counts the whole queue rather than the current filter, so a tab does not hide
+its own count the moment you select it. `meta` also echoes the filters back, and that matters:
+an unrecognised `status` or `sort` is **ignored rather than refused**, so compare what came
+back with what you sent before rendering "no results".
+
+The `status` filter takes `pending`, `in_progress` or `completed`. There is deliberately no
+`rejected`: an assignment she has handed back has left her queue entirely, so the filter would
+only ever return nothing.
+
+**Opening it.** `GET /fact_checker/assignments/7` adds the admin's brief (`notes`), the name
+of the member who submitted the claim and nothing else about them, the claim's evidence, her
+own working copy of the verdict, and three booleans: `can_start`, `can_reject` and
+`verdict_editable`. Drive the buttons from those rather than from `status`.
+
+The payload carries **two different verdicts**, and they are not duplicates.
+`data.claim.verdict` is the public finding, the same shape a marketplace reader gets.
+`data.verdict` is her working copy: it has the record id, whether it can still be revised,
+the documents behind it, and `submitted_at` as distinct from `published_at`.
+
+**Starting the review.** No body.
+
+```
+POST /api/v1/fact_checker/assignments/7/start
+```
+
+`200`, and `data.status` is now `in_progress`. The claim itself does not move: it has been
+`in_progress` since the admin assigned it.
+
+**This is single use.** Starting an assignment that is already started answers
+`422` and `This review has already been started.` A double tap or a stale screen posting
+again is exactly how that happens, so gate on `can_start` and treat the `422` as the
+backstop.
+
+**Writing the verdict.** The verdict and its supporting documents travel together, in one
+`multipart/form-data` request:
+
+```bash
+curl -X POST https://kasagadi.ai/api/v1/fact_checker/assignments/7/verdict \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "verdict[verdict]=misleading" \
+  -F "verdict[verdict_summary]=The figure is real but out of date." \
+  -F "verdict[research]=Checked against the 2024 budget statement." \
+  -F "verdict[documents][]=@budget-statement.pdf"
+```
+
+`201 Created`. The assignment is now `completed` and the claim is in front of the owner admin
+for approval. `data.verdict.published_at` stays `null`: nothing is live until an admin
+approves, and that approval is also when the member is told.
+
+`verdict`, `verdict_summary` and `research` are required; `reference_link` and the documents
+are optional. `verdict` must be one of the five values from `/taxonomies`. Anything else comes
+back as `{ "verdict": ["is not one of the five verdicts"] }` rather than as a server error,
+which is why it is worth driving the picker from `/taxonomies` in the first place.
+
+**One verdict per claim.** A second `POST` answers `422` and
+`This claim already has a verdict. Revise it with PATCH instead.`
+
+**Revising** is a `PATCH` on the same path with every part optional, so correcting a summary
+need not resend the research she did not touch. Documents sent on a `PATCH` are **added** to
+what is attached rather than swapped for it; taking one off is
+`DELETE /fact_checker/assignments/7/verdict/documents/{id}`, using the id from
+`data.verdict.supporting_documents[].id`. Nothing on the `PATCH` re-announces the verdict to
+the admins: it is already in their queue, and only the first submission notifies.
+
+Revision closes when an admin approves:
+
+| Situation | `verdict.editable` | `PATCH` answers |
+|---|---|---|
+| No verdict written yet | there is no verdict object | `404` `No verdict has been submitted for this claim yet.` |
+| Submitted, awaiting approval | `true` | `200` |
+| Approved and published | `false` | `422` `This verdict has been approved and can no longer be edited.` |
+
+Read `editable` before offering the edit screen. Once the finding is on the marketplace it
+must not change underneath readers, and the same rule blocks pulling a supporting document
+off it.
+
+### 22.13 Akosua hands an assignment back
+
+*The claim names an organisation Akosua works for. She cannot be the one to check it.*
+
+```
+POST /api/v1/fact_checker/assignments/7/reject
+{ "rejection_reason": "I work for the organisation named in this claim." }
+```
+
+The reason sits at the top level, not inside an envelope. It is optional, but collect it: it
+is what the admin reads when deciding who to hand the claim to next.
+
+This is allowed from a review already in progress as well as from an untouched one, because a
+conflict of interest is often only visible once you start reading. It is refused once a
+verdict exists:
+
+| Status | Message |
+|---|---|
+| `422` | `A verdict has already been submitted, so this assignment cannot be handed back.` |
+| `422` | `This claim is no longer open for review, so it cannot be handed back.` |
+
+**The `200` is the last look she gets at it.** Handing a claim back returns it to the admin
+desk and takes it out of her scope entirely, so the very next `GET
+/fact_checker/assignments/7` answers `404`, not `403`, and it is gone from her queue and from
+every filter on it. Navigate back to the list on success. Do not refresh the detail screen,
+and do not treat that `404` as a fault.
+
+The claim goes back to `pending_assignment`, the assignment is marked `rejected`, and an audit
+entry is written, all in one transaction: a half-applied rejection would leave a claim nobody
+is working on and nobody has been told about. The member is deliberately **not** notified,
+because from their side nothing has changed and the claim is still being worked on.
+
+### 22.14 Kwame the administrator tries the app
 
 *Kwame runs the platform. He downloads the app and enters his working credentials.*
 
@@ -897,7 +1472,39 @@ not offer a retry.
 This holds even if his account also has a member record, and it is re-checked on **every**
 request, not just at sign-in.
 
-### 21.10 Kofi's account is suspended while he is using it
+### 22.15 What each role is refused, and why a missing record is a 404
+
+A token belongs to a member or to a fact checker, and the two tiers do not overlap.
+
+| Called by | `/claims`, `/me`, `/taxonomies` | `/me/dashboard`, `/me/claims/*` | `/fact_checker/*` |
+|---|---|---|---|
+| Member | `200` | `200` | `403` `This area is for fact checkers. Members use the member portal.` |
+| Fact checker | `200` | `403` `This area is for members. Fact checkers use the fact checker portal.` | `200` |
+| Administrator | `403` | `403` | `403` |
+
+An account that somehow holds both roles counts as a **fact checker**, the same way `/me`
+resolves the `role` it hands the app, so the member tier refuses it. Route on `role` from
+`/me` and none of these ever appear in normal use.
+
+The role check runs on **every** request, not only at sign-in, so an account whose role
+changes mid-session starts being refused straight away.
+
+**A record that is not yours, though, is `404` rather than `403`,** and that is deliberate:
+
+- Another member's claim, and one an admin has unpublished: `404`.
+- Another checker's assignment, and one this checker has already handed back: `404`.
+- A supporting document belonging to somebody else's verdict: `404`.
+
+A `403` would confirm the record exists, which is a fact the caller is not entitled to. Each
+lookup is scoped to the caller's own collection, so a record they may not read is simply
+absent from it. The web answers the same lookup with a redirect and an explanation, because a
+stale link in an email is worth explaining to a person; the API does not have that luxury.
+
+**So do not render "you do not have permission" for a `404` on one of these paths.** "That
+claim is no longer available" is both truer and less alarming. The one place a wrong role
+really is a `403` is the tier itself, and that says nothing about any particular record.
+
+### 22.16 Kofi's account is suspended while he is using it
 
 *A moderator suspends Kofi mid-session.*
 
@@ -911,7 +1518,7 @@ real reason (`403` with the suspension message).
 The same applies if his role changes: an account promoted to administrator, or one that
 loses its member record, stops working mid-session by design.
 
-### 21.11 Kofi is on a bad network
+### 22.17 Kofi is on a bad network
 
 *Kofi is on 3G in Tamale. Requests time out; he taps twice.*
 
@@ -943,7 +1550,7 @@ These are keyed by identity rather than by IP address on purpose: a large share 
 Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
 IP-keyed limit would have users locking each other out.
 
-### 21.12 Errors, in one shape
+### 22.18 Errors, in one shape
 
 Every failure uses the same envelope, so one parser covers the whole API:
 
@@ -965,15 +1572,29 @@ is written for a person and can be shown as-is.
 | `429` | Rate limited | Back off, show a plain message. |
 | `5xx` | Server fault | Retry with backoff; show a generic failure. |
 
-### 21.13 Checklist before the first build ships
+### 22.19 Checklist before the first build ships
 
 - [ ] Tokens are in the device keychain, never in plain preferences, and never logged.
 - [ ] A single-flight refresh interceptor handles `401` and replays the request once.
+- [ ] A refresh replaces **both** stored tokens; the old access token is never reused.
 - [ ] `role` from `/me` drives navigation; `abilities` only shows and hides controls.
 - [ ] Upload limits and vocabularies are read from `/config`, not hard-coded.
+- [ ] Topic, region and verdict pickers are built from `/taxonomies`, sending `value` and
+      showing `label`.
 - [ ] `min_supported_app_version` is checked on cold start.
 - [ ] The reset code is sent as `reset_code` in the body, not in the URL.
+- [ ] Evidence and verdict uploads are a single `multipart/form-data` request, with
+      `evidence[files][]` and `verdict[documents][]` repeated once per file.
+- [ ] Every write response is used to redraw the screen, with no follow-up read.
+- [ ] Edit and delete controls are hidden once a claim's `status` leaves `draft`.
+- [ ] "Fact checked" is gated on `status == "published"`, not on a verdict existing.
+- [ ] `can_start`, `can_reject` and `verdict_editable` drive the fact-checker buttons, with
+      the `422` treated as the backstop for a stale screen.
+- [ ] Rejecting an assignment navigates back to the queue; the detail screen is not
+      refreshed, because it now answers `404`.
 - [ ] `403` on sign-in is a dead end with the server's message, not a retry loop.
-- [ ] `422` `details` are rendered per field.
+- [ ] `404` on someone else's record is shown as "no longer available", not as a permission
+      error.
+- [ ] `422` `details` are rendered per field, and `details.base` as a form-level message.
 - [ ] Sign-out clears local credentials even when the request fails.
 - [ ] Nothing in the app contains a `kg_live_…` partner key.
