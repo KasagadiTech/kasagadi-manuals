@@ -810,6 +810,49 @@ powers claim analysis (<code>analyse</code> / <code>analyse_stream</code>). If t
 
 <p><strong>Realtime + suspension:</strong> <code>ApplicationCable::Connection</code> allows anonymous connections (so
 visitors can chat) and refuses suspended users (see &quot;Account suspension&quot;).</p>
+<h3 id="the-app-asks-the-same-assistant">The app asks the same assistant</h3>
+<p>The mobile app talks to the same <code>FactCheckAi</code> client, writes to the same <code>Conversation</code>
+and <code>Message</code> rows, and gets the same answers. Two endpoints:</p>
+<table>
+<thead><tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Returns</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>/api/v1/chat/messages</code></td>
+<td>POST</td>
+<td>The whole reply, in one response</td>
+</tr>
+<tr>
+<td><code>/api/v1/chat</code></td>
+<td>GET</td>
+<td>The stored thread, newest first, paged</td>
+</tr>
+</tbody>
+</table>
+<p>Both mobile roles reach them, and each person's thread is their own.</p>
+<p><strong>Mobile is the simpler half.</strong> Anonymous chat is where the web's hardest code lives: with
+nothing stored for a guest, the prior turns have to come from the browser, and the
+controller says plainly in its own comments that a hand-rolled request can therefore claim
+the assistant said anything. Every mobile caller is signed in, so every one has a
+<code>Conversation</code>, so history comes from the database and a supplied history is not read.</p>
+<p><strong>The app renders the Markdown.</strong> <code>content</code> is what the model wrote, which is what the
+column stores. The web turns it into HTML through a partial on the way out; the app has no
+browser to put a fragment in, and HTML written for the web's stylesheet would look wrong in
+it anyway.</p>
+<p><strong>There is no streaming endpoint, and the reason is a measurement.</strong> The reply arrives in
+one response, which means the request holds a Puma thread for the whole upstream call. Two
+real questions took 5.7 and 9.8 seconds, and three of them in flight at once took an
+unrelated <code>GET /api/v1/config</code> from 0.037s to 4.43s on a three-thread server.
+<code>RAILS_MAX_THREADS</code> defaults to 3, and a 20-a-minute per-user throttle is what bounds it.</p>
+<p>That cost is not about streaming. Server-sent events would hold the thread for exactly as
+long. It is the web's job-and-cable route that avoids it, by doing the waiting in a queue
+worker, and reaching for that on mobile means the app needs a WebSocket and
+<code>ApplicationCable::Connection</code> needs to accept a bearer token instead of a signed cookie.
+So the open question is not "should the reply stream" but "should the waiting happen in a
+request thread at all".</p>
       </section>
 
       <hr class="divider">
@@ -1686,7 +1729,7 @@ disables one.</p>
 <p>Written for the mobile team. The <a href="api.html">Swagger reference</a> says what each endpoint
 accepts and returns; this section says <strong>when to call it, in what order, and what to do
 with the answer</strong>. Each journey follows one person through one task.</p>
-<ul><li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li><li><strong>Credential:</strong> an access token from <code>POST /auth/login</code>, sent as <code>Authorization: Bearer &lt;access_token&gt;</code>. The app ships <strong>no</strong> API key. The partner key described in §21 is a different credential for a different audience: never put one in the app.</li><li><strong>Two roles reach the app:</strong> members of the public, and accredited fact-checkers. Administrators are refused and told to use the web portal.</li><li><strong>Three tiers of endpoint.</strong> <code>/claims</code>, <code>/claims/:id</code>, <code>/claims/:id/related</code> and <code>/marketplace/facets</code> take either credential. <code>/me</code>, <code>/me/notifications</code>, <code>/taxonomies</code> and <code>/auth/logout</code> take any user token. Everything under <code>/me/claims</code> is members only and everything under <code>/fact_checker</code> is fact-checkers only, each refusing the other role with <code>403</code> (§22.16).</li></ul>
+<ul><li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li><li><strong>Credential:</strong> an access token from <code>POST /auth/login</code>, sent as <code>Authorization: Bearer &lt;access_token&gt;</code>. The app ships <strong>no</strong> API key. The partner key described in §21 is a different credential for a different audience: never put one in the app.</li><li><strong>Two roles reach the app:</strong> members of the public, and accredited fact-checkers. Administrators are refused and told to use the web portal.</li><li><strong>Three tiers of endpoint.</strong> <code>/claims</code>, <code>/claims/:id</code>, <code>/claims/:id/related</code> and <code>/marketplace/facets</code> take either credential. <code>/me</code>, <code>/me/notifications</code>, <code>/chat</code>, <code>/taxonomies</code> and <code>/auth/logout</code> take any user token. Everything under <code>/me/claims</code> is members only and everything under <code>/fact_checker</code> is fact-checkers only, each refusing the other role with <code>403</code> (§22.17).</li></ul>
 <h3 id="22-1-the-two-tokens-in-one-paragraph">22.1 The two tokens, in one paragraph</h3>
 <p>Signing in returns a pair. The <strong>access token</strong> rides on every request and lasts
 <strong>30 minutes</strong>. The <strong>refresh token</strong> does nothing but buy a new pair, and lasts
@@ -2279,14 +2322,65 @@ unpublished by the time it is opened, so <code>GET /claims/259</code> answers <c
 every other stale screen is handled: return to the list rather than showing an error.</p>
 <p><strong>Push notifications do not exist yet.</strong> This is the feed the app reads while it is open.
 APNs and FCM come later, and will not change these four endpoints.</p>
-<h3 id="22-15-kwame-the-administrator-tries-the-app">22.15 Kwame the administrator tries the app</h3>
+<h3 id="22-15-kofi-asks-the-assistant-a-question-and-comes-back-to-it-tomorrow">22.15 Kofi asks the assistant a question, and comes back to it tomorrow</h3>
+<p><em>Kofi has seen a headline he does not believe and wants to ask about it before submitting
+anything.</em></p>
+<p>The assistant is the same one behind the widget on the website, and both mobile roles reach
+it. Each person's thread is their own.</p>
+<p><strong>Opening the chat screen</strong> loads the thread. Reading does not create one, so a user who has
+never chatted gets an empty list rather than a row written by the act of looking.</p>
+<pre><code>GET /api/v1/chat?page=1&amp;per_page=30</code></pre>
+<pre><code class="language-json">{ "data": [
+    { "id": 4, "role": "assistant",
+      "content": "Fuel prices rose about 3% in August, not 40%.",
+      "sources": [ { "title": "Fuel price check", "url": "https://kasagadi.ai/marketplace/12",
+                     "source": "GhanaFact", "verdict": "False" } ],
+      "created_at": "2026-08-29T22:41:09Z" },
+    { "id": 3, "role": "user", "content": "Did fuel go up 40%?",
+      "sources": [], "created_at": "2026-08-29T22:41:02Z" } ],
+  "meta": { "page": 1, "per_page": 30, "total_pages": 2, "total_count": 44 } }</code></pre>
+<p><strong>Newest first</strong>, like the notification feed, so page one is the end of the conversation and
+scrolling up asks for page two. Reverse each page to render it. <code>sources</code> is always an
+array, empty on the caller's own turns.</p>
+<p><strong><code>content</code> is Markdown, and the app renders it.</strong> The web turns it into HTML on the way
+out; an app has no browser to put a fragment in. Whatever Markdown renderer the app already
+uses is the right one here.</p>
+<p><strong>Asking a question</strong> is one request, and it does not come back until the assistant has
+finished writing:</p>
+<pre><code>POST /api/v1/chat/messages</code></pre>
+<pre><code class="language-json">{ "message": "Did fuel go up 40%?" }</code></pre>
+<pre><code class="language-json">{ "data": {
+    "message": { "id": 3, "role": "user", "content": "Did fuel go up 40%?",
+                 "sources": [], "created_at": "2026-08-29T22:41:02Z" },
+    "reply":   { "id": 4, "role": "assistant",
+                 "content": "Fuel prices rose about 3% in August, not 40%.",
+                 "sources": [ { "title": "Fuel price check", "url": "…",
+                                "source": "GhanaFact", "verdict": "False" } ],
+                 "created_at": "2026-08-29T22:41:09Z" } } }</code></pre>
+<p><strong>Expect this to take five to ten seconds.</strong> Measured against the live assistant, two
+questions took 5.7 and 9.8 seconds. Show the user's own message straight away, then a
+thinking indicator, then swap in the reply when it lands. The user's turn comes back in
+<code>data.message</code> with its real id, so an optimistic bubble can be replaced rather than kept.</p>
+<p><strong>Set a generous request timeout.</strong> The server allows up to 180 seconds between bytes from
+the assistant, so a 30-second client timeout will occasionally cut off a reply that was
+still coming.</p>
+<p><strong>Do not send a history.</strong> The web has to, because it serves anonymous visitors and stores
+nothing for them. Every caller here is signed in, so the last turns are read from the
+database, and a <code>history</code> in the request body is ignored.</p>
+<p><strong>A <code>503</code> means the assistant is down</strong>, not that anything is wrong with the question. Show
+<code>error.message</code>, which is the same sentence the web widget shows, and offer to send it
+again. <strong>A <code>429</code></strong> means more than twenty questions in a minute.</p>
+<p><strong>There is no streaming endpoint yet.</strong> The web types the reply out as it is written, and it
+does so by broadcasting rendered HTML over Action Cable, which an app cannot use. What
+replaces it is an open question, and §7 has the measurement behind it.</p>
+<h3 id="22-16-kwame-the-administrator-tries-the-app">22.16 Kwame the administrator tries the app</h3>
 <p><em>Kwame runs the platform. He downloads the app and enters his working credentials.</em></p>
 <p>He gets <code>403</code> and "Administrators sign in on the web portal." His password was correct;
 mobile simply is not for him. The app should show that message and link to the website,
 not offer a retry.</p>
 <p>This holds even if his account also has a member record, and it is re-checked on <strong>every</strong>
 request, not just at sign-in.</p>
-<h3 id="22-16-what-each-role-is-refused-and-why-a-missing-record-is-a-404">22.16 What each role is refused, and why a missing record is a 404</h3>
+<h3 id="22-17-what-each-role-is-refused-and-why-a-missing-record-is-a-404">22.17 What each role is refused, and why a missing record is a 404</h3>
 <p>A token belongs to a member or to a fact checker, and the two tiers do not overlap.</p>
 <table>
 <thead><tr>
@@ -2334,7 +2428,7 @@ stale link in an email is worth explaining to a person; the API does not have th
 <p><strong>So do not render "you do not have permission" for a <code>404</code> on one of these paths.</strong> "That
 claim is no longer available" is both truer and less alarming. The one place a wrong role
 really is a <code>403</code> is the tier itself, and that says nothing about any particular record.</p>
-<h3 id="22-17-kofi-s-account-is-suspended-while-he-is-using-it">22.17 Kofi's account is suspended while he is using it</h3>
+<h3 id="22-18-kofi-s-account-is-suspended-while-he-is-using-it">22.18 Kofi's account is suspended while he is using it</h3>
 <p><em>A moderator suspends Kofi mid-session.</em></p>
 <p>His tokens stop working immediately: suspension destroys every session, so the next call
 returns <code>401</code> and the refresh fails too. There is no grace period and no push notification.</p>
@@ -2343,7 +2437,7 @@ expiry. Clear credentials, return to sign-in, and let his next sign-in attempt s
 real reason (<code>403</code> with the suspension message).</p>
 <p>The same applies if his role changes: an account promoted to administrator, or one that
 loses its member record, stops working mid-session by design.</p>
-<h3 id="22-18-kofi-is-on-a-bad-network">22.18 Kofi is on a bad network</h3>
+<h3 id="22-19-kofi-is-on-a-bad-network">22.19 Kofi is on a bad network</h3>
 <p><em>Kofi is on 3G in Tamale. Requests time out; he taps twice.</em></p>
 <ul><li><strong>Retrying <code>POST /auth/login</code></strong> is safe. It creates a second session rather than replacing the first, which is fine. Sessions are per device and cheap.</li><li><strong>Retrying <code>POST /auth/refresh</code> with the same token is not.</strong> If the first attempt reached the server, the token is spent and the retry returns <code>401</code>. Treat a timed-out refresh as unknown, not failed: retry once, and on <code>401</code> re-authenticate rather than looping.</li><li><strong>Double-tapping "Send code"</strong> is safe. Each request replaces the previous code, so only the most recent email works. If Kofi reads the older message, the code is rejected. It is worth saying "use the most recent code" on the entry screen.</li><li><strong>Double-tapping "Register"</strong> returns <code>422 has already been taken</code> on the second, not a crash. Treat it as "you already have an account" rather than a hard error.</li></ul>
 <p><strong>Rate limits</strong> return <code>429</code>. Back off and show a plain message; do not retry in a tight
@@ -2383,7 +2477,7 @@ loop.</p>
 <p>These are keyed by identity rather than by IP address on purpose: a large share of
 Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
 IP-keyed limit would have users locking each other out.</p>
-<h3 id="22-19-errors-in-one-shape">22.19 Errors, in one shape</h3>
+<h3 id="22-20-errors-in-one-shape">22.20 Errors, in one shape</h3>
 <p>Every failure uses the same envelope, so one parser covers the whole API:</p>
 <pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
              "details": { "email_address": ["has already been taken"] } } }</code></pre>
@@ -2433,8 +2527,8 @@ is written for a person and can be shown as-is.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="22-20-checklist-before-the-first-build-ships">22.20 Checklist before the first build ships</h3>
-<ul class="checklist"><li><input type="checkbox" disabled> Tokens are in the device keychain, never in plain preferences, and never logged.</li><li><input type="checkbox" disabled> A single-flight refresh interceptor handles <code>401</code> and replays the request once.</li><li><input type="checkbox" disabled> A refresh replaces <strong>both</strong> stored tokens; the old access token is never reused.</li><li><input type="checkbox" disabled> <code>role</code> from <code>/me</code> drives navigation; <code>abilities</code> only shows and hides controls.</li><li><input type="checkbox" disabled> Upload limits and vocabularies are read from <code>/config</code>, not hard-coded.</li><li><input type="checkbox" disabled> Topic, region and verdict pickers are built from <code>/taxonomies</code>, sending <code>value</code> and showing <code>label</code>.</li><li><input type="checkbox" disabled> <code>min_supported_app_version</code> is checked on cold start.</li><li><input type="checkbox" disabled> The reset code is sent as <code>reset_code</code> in the body, not in the URL.</li><li><input type="checkbox" disabled> Evidence and verdict uploads are a single <code>multipart/form-data</code> request, with <code>evidence[files][]</code> and <code>verdict[documents][]</code> repeated once per file.</li><li><input type="checkbox" disabled> Every write response is used to redraw the screen, with no follow-up read.</li><li><input type="checkbox" disabled> Edit and delete controls are hidden once a claim's <code>status</code> leaves <code>draft</code>.</li><li><input type="checkbox" disabled> "Fact checked" is gated on <code>status == "published"</code>, not on a verdict existing.</li><li><input type="checkbox" disabled> <code>can_start</code>, <code>can_reject</code> and <code>verdict_editable</code> drive the fact-checker buttons, with the <code>422</code> treated as the backstop for a stale screen.</li><li><input type="checkbox" disabled> Rejecting an assignment navigates back to the queue; the detail screen is not refreshed, because it now answers <code>404</code>.</li><li><input type="checkbox" disabled> <code>403</code> on sign-in is a dead end with the server's message, not a retry loop.</li><li><input type="checkbox" disabled> <code>404</code> on someone else's record is shown as "no longer available", not as a permission error.</li><li><input type="checkbox" disabled> The bell badge is drawn from <code>/me/notifications/unread_count</code>, not by fetching a page of the feed.</li><li><input type="checkbox" disabled> Notification rows show <code>title</code> and <code>body</code> as they arrive; no copy is built from <code>type</code>.</li><li><input type="checkbox" disabled> Tapping a row navigates from <code>target</code> and records the read separately, with neither waiting on the other.</li><li><input type="checkbox" disabled> An unrecognised <code>target.type</code>, and a null <code>target</code>, both render as plain text rather than as a tappable row.</li><li><input type="checkbox" disabled> <code>422</code> <code>details</code> are rendered per field, and <code>details.base</code> as a form-level message.</li><li><input type="checkbox" disabled> Sign-out clears local credentials even when the request fails.</li><li><input type="checkbox" disabled> Nothing in the app contains a <code>kg_live_…</code> partner key.</li></ul>
+<h3 id="22-21-checklist-before-the-first-build-ships">22.21 Checklist before the first build ships</h3>
+<ul class="checklist"><li><input type="checkbox" disabled> Tokens are in the device keychain, never in plain preferences, and never logged.</li><li><input type="checkbox" disabled> A single-flight refresh interceptor handles <code>401</code> and replays the request once.</li><li><input type="checkbox" disabled> A refresh replaces <strong>both</strong> stored tokens; the old access token is never reused.</li><li><input type="checkbox" disabled> <code>role</code> from <code>/me</code> drives navigation; <code>abilities</code> only shows and hides controls.</li><li><input type="checkbox" disabled> Upload limits and vocabularies are read from <code>/config</code>, not hard-coded.</li><li><input type="checkbox" disabled> Topic, region and verdict pickers are built from <code>/taxonomies</code>, sending <code>value</code> and showing <code>label</code>.</li><li><input type="checkbox" disabled> <code>min_supported_app_version</code> is checked on cold start.</li><li><input type="checkbox" disabled> The reset code is sent as <code>reset_code</code> in the body, not in the URL.</li><li><input type="checkbox" disabled> Evidence and verdict uploads are a single <code>multipart/form-data</code> request, with <code>evidence[files][]</code> and <code>verdict[documents][]</code> repeated once per file.</li><li><input type="checkbox" disabled> Every write response is used to redraw the screen, with no follow-up read.</li><li><input type="checkbox" disabled> Edit and delete controls are hidden once a claim's <code>status</code> leaves <code>draft</code>.</li><li><input type="checkbox" disabled> "Fact checked" is gated on <code>status == "published"</code>, not on a verdict existing.</li><li><input type="checkbox" disabled> <code>can_start</code>, <code>can_reject</code> and <code>verdict_editable</code> drive the fact-checker buttons, with the <code>422</code> treated as the backstop for a stale screen.</li><li><input type="checkbox" disabled> Rejecting an assignment navigates back to the queue; the detail screen is not refreshed, because it now answers <code>404</code>.</li><li><input type="checkbox" disabled> <code>403</code> on sign-in is a dead end with the server's message, not a retry loop.</li><li><input type="checkbox" disabled> <code>404</code> on someone else's record is shown as "no longer available", not as a permission error.</li><li><input type="checkbox" disabled> The bell badge is drawn from <code>/me/notifications/unread_count</code>, not by fetching a page of the feed.</li><li><input type="checkbox" disabled> Notification rows show <code>title</code> and <code>body</code> as they arrive; no copy is built from <code>type</code>.</li><li><input type="checkbox" disabled> Tapping a row navigates from <code>target</code> and records the read separately, with neither waiting on the other.</li><li><input type="checkbox" disabled> An unrecognised <code>target.type</code>, and a null <code>target</code>, both render as plain text rather than as a tappable row.</li><li><input type="checkbox" disabled> The chat request timeout is generous enough for a reply that takes ten seconds or more, and the screen says something while it waits.</li><li><input type="checkbox" disabled> Chat <code>content</code> is rendered as Markdown, and <code>sources</code> are shown under an assistant turn.</li><li><input type="checkbox" disabled> No <code>history</code> is sent with a chat message; the server reads it from the thread.</li><li><input type="checkbox" disabled> <code>422</code> <code>details</code> are rendered per field, and <code>details.base</code> as a form-level message.</li><li><input type="checkbox" disabled> Sign-out clears local credentials even when the request fails.</li><li><input type="checkbox" disabled> Nothing in the app contains a <code>kg_live_…</code> partner key.</li></ul>
       </section>
     </article>
 

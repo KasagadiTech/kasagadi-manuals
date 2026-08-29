@@ -296,6 +296,42 @@ powers claim analysis (`analyse` / `analyse_stream`). If the upstream is down, t
 **Realtime + suspension:** `ApplicationCable::Connection` allows anonymous connections (so
 visitors can chat) and refuses suspended users (see "Account suspension").
 
+### The app asks the same assistant
+
+The mobile app talks to the same `FactCheckAi` client, writes to the same `Conversation`
+and `Message` rows, and gets the same answers. Two endpoints:
+
+| Endpoint | Method | Returns |
+|---|---|---|
+| `/api/v1/chat/messages` | POST | The whole reply, in one response |
+| `/api/v1/chat` | GET | The stored thread, newest first, paged |
+
+Both mobile roles reach them, and each person's thread is their own.
+
+**Mobile is the simpler half.** Anonymous chat is where the web's hardest code lives: with
+nothing stored for a guest, the prior turns have to come from the browser, and the
+controller says plainly in its own comments that a hand-rolled request can therefore claim
+the assistant said anything. Every mobile caller is signed in, so every one has a
+`Conversation`, so history comes from the database and a supplied history is not read.
+
+**The app renders the Markdown.** `content` is what the model wrote, which is what the
+column stores. The web turns it into HTML through a partial on the way out; the app has no
+browser to put a fragment in, and HTML written for the web's stylesheet would look wrong in
+it anyway.
+
+**There is no streaming endpoint, and the reason is a measurement.** The reply arrives in
+one response, which means the request holds a Puma thread for the whole upstream call. Two
+real questions took 5.7 and 9.8 seconds, and three of them in flight at once took an
+unrelated `GET /api/v1/config` from 0.037s to 4.43s on a three-thread server.
+`RAILS_MAX_THREADS` defaults to 3, and a 20-a-minute per-user throttle is what bounds it.
+
+That cost is not about streaming. Server-sent events would hold the thread for exactly as
+long. It is the web's job-and-cable route that avoids it, by doing the waiting in a queue
+worker, and reaching for that on mobile means the app needs a WebSocket and
+`ApplicationCable::Connection` needs to accept a bearer token instead of a signed cookie.
+So the open question is not "should the reply stream" but "should the waiting happen in a
+request thread at all".
+
 ## Account suspension
 
 Any account can be set `active` or `suspended` (`users.status`). Suspension is a hard block
@@ -948,9 +984,9 @@ with the answer**. Each journey follows one person through one task.
 - **Two roles reach the app:** members of the public, and accredited fact-checkers.
   Administrators are refused and told to use the web portal.
 - **Three tiers of endpoint.** `/claims`, `/claims/:id`, `/claims/:id/related` and
-  `/marketplace/facets` take either credential. `/me`, `/me/notifications`, `/taxonomies`
-  and `/auth/logout` take any user token. Everything under `/me/claims` is members only and everything under
-  `/fact_checker` is fact-checkers only, each refusing the other role with `403` (§22.16).
+  `/marketplace/facets` take either credential. `/me`, `/me/notifications`, `/chat`,
+  `/taxonomies` and `/auth/logout` take any user token. Everything under `/me/claims` is members only and everything under
+  `/fact_checker` is fact-checkers only, each refusing the other role with `403` (§22.17).
 
 ### 22.1 The two tokens, in one paragraph
 
@@ -1671,7 +1707,85 @@ every other stale screen is handled: return to the list rather than showing an e
 **Push notifications do not exist yet.** This is the feed the app reads while it is open.
 APNs and FCM come later, and will not change these four endpoints.
 
-### 22.15 Kwame the administrator tries the app
+### 22.15 Kofi asks the assistant a question, and comes back to it tomorrow
+
+*Kofi has seen a headline he does not believe and wants to ask about it before submitting
+anything.*
+
+The assistant is the same one behind the widget on the website, and both mobile roles reach
+it. Each person's thread is their own.
+
+**Opening the chat screen** loads the thread. Reading does not create one, so a user who has
+never chatted gets an empty list rather than a row written by the act of looking.
+
+```
+GET /api/v1/chat?page=1&per_page=30
+```
+
+```json
+{ "data": [
+    { "id": 4, "role": "assistant",
+      "content": "Fuel prices rose about 3% in August, not 40%.",
+      "sources": [ { "title": "Fuel price check", "url": "https://kasagadi.ai/marketplace/12",
+                     "source": "GhanaFact", "verdict": "False" } ],
+      "created_at": "2026-08-29T22:41:09Z" },
+    { "id": 3, "role": "user", "content": "Did fuel go up 40%?",
+      "sources": [], "created_at": "2026-08-29T22:41:02Z" } ],
+  "meta": { "page": 1, "per_page": 30, "total_pages": 2, "total_count": 44 } }
+```
+
+**Newest first**, like the notification feed, so page one is the end of the conversation and
+scrolling up asks for page two. Reverse each page to render it. `sources` is always an
+array, empty on the caller's own turns.
+
+**`content` is Markdown, and the app renders it.** The web turns it into HTML on the way
+out; an app has no browser to put a fragment in. Whatever Markdown renderer the app already
+uses is the right one here.
+
+**Asking a question** is one request, and it does not come back until the assistant has
+finished writing:
+
+```
+POST /api/v1/chat/messages
+```
+
+```json
+{ "message": "Did fuel go up 40%?" }
+```
+
+```json
+{ "data": {
+    "message": { "id": 3, "role": "user", "content": "Did fuel go up 40%?",
+                 "sources": [], "created_at": "2026-08-29T22:41:02Z" },
+    "reply":   { "id": 4, "role": "assistant",
+                 "content": "Fuel prices rose about 3% in August, not 40%.",
+                 "sources": [ { "title": "Fuel price check", "url": "…",
+                                "source": "GhanaFact", "verdict": "False" } ],
+                 "created_at": "2026-08-29T22:41:09Z" } } }
+```
+
+**Expect this to take five to ten seconds.** Measured against the live assistant, two
+questions took 5.7 and 9.8 seconds. Show the user's own message straight away, then a
+thinking indicator, then swap in the reply when it lands. The user's turn comes back in
+`data.message` with its real id, so an optimistic bubble can be replaced rather than kept.
+
+**Set a generous request timeout.** The server allows up to 180 seconds between bytes from
+the assistant, so a 30-second client timeout will occasionally cut off a reply that was
+still coming.
+
+**Do not send a history.** The web has to, because it serves anonymous visitors and stores
+nothing for them. Every caller here is signed in, so the last turns are read from the
+database, and a `history` in the request body is ignored.
+
+**A `503` means the assistant is down**, not that anything is wrong with the question. Show
+`error.message`, which is the same sentence the web widget shows, and offer to send it
+again. **A `429`** means more than twenty questions in a minute.
+
+**There is no streaming endpoint yet.** The web types the reply out as it is written, and it
+does so by broadcasting rendered HTML over Action Cable, which an app cannot use. What
+replaces it is an open question, and §7 has the measurement behind it.
+
+### 22.16 Kwame the administrator tries the app
 
 *Kwame runs the platform. He downloads the app and enters his working credentials.*
 
@@ -1682,7 +1796,7 @@ not offer a retry.
 This holds even if his account also has a member record, and it is re-checked on **every**
 request, not just at sign-in.
 
-### 22.16 What each role is refused, and why a missing record is a 404
+### 22.17 What each role is refused, and why a missing record is a 404
 
 A token belongs to a member or to a fact checker, and the two tiers do not overlap.
 
@@ -1714,7 +1828,7 @@ stale link in an email is worth explaining to a person; the API does not have th
 claim is no longer available" is both truer and less alarming. The one place a wrong role
 really is a `403` is the tier itself, and that says nothing about any particular record.
 
-### 22.17 Kofi's account is suspended while he is using it
+### 22.18 Kofi's account is suspended while he is using it
 
 *A moderator suspends Kofi mid-session.*
 
@@ -1728,7 +1842,7 @@ real reason (`403` with the suspension message).
 The same applies if his role changes: an account promoted to administrator, or one that
 loses its member record, stops working mid-session by design.
 
-### 22.18 Kofi is on a bad network
+### 22.19 Kofi is on a bad network
 
 *Kofi is on 3G in Tamale. Requests time out; he taps twice.*
 
@@ -1760,7 +1874,7 @@ These are keyed by identity rather than by IP address on purpose: a large share 
 Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
 IP-keyed limit would have users locking each other out.
 
-### 22.19 Errors, in one shape
+### 22.20 Errors, in one shape
 
 Every failure uses the same envelope, so one parser covers the whole API:
 
@@ -1782,7 +1896,7 @@ is written for a person and can be shown as-is.
 | `429` | Rate limited | Back off, show a plain message. |
 | `5xx` | Server fault | Retry with backoff; show a generic failure. |
 
-### 22.20 Checklist before the first build ships
+### 22.21 Checklist before the first build ships
 
 - [ ] Tokens are in the device keychain, never in plain preferences, and never logged.
 - [ ] A single-flight refresh interceptor handles `401` and replays the request once.
@@ -1812,6 +1926,11 @@ is written for a person and can be shown as-is.
       waiting on the other.
 - [ ] An unrecognised `target.type`, and a null `target`, both render as plain text rather
       than as a tappable row.
+- [ ] The chat request timeout is generous enough for a reply that takes ten seconds or
+      more, and the screen says something while it waits.
+- [ ] Chat `content` is rendered as Markdown, and `sources` are shown under an assistant
+      turn.
+- [ ] No `history` is sent with a chat message; the server reads it from the thread.
 - [ ] `422` `details` are rendered per field, and `details.base` as a form-level message.
 - [ ] Sign-out clears local credentials even when the request fails.
 - [ ] Nothing in the app contains a `kg_live_…` partner key.
