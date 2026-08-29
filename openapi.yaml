@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Kasagadi API
-  version: "1.2.0"
+  version: "1.3.0"
   description: |
     The JSON API behind Kasagadi. It serves two different audiences, with two
     different credentials.
@@ -44,8 +44,8 @@ info:
     - `/claims`, `/claims/{id}`, `/claims/{id}/related` and `/marketplace/facets`
       accept **either** a partner key or a user access token, because a published
       claim is the same public payload either way.
-    - `/me`, `/taxonomies` and `/auth/logout` require a **user access token** and
-      accept both mobile roles.
+    - `/me`, `/me/notifications`, `/taxonomies` and `/auth/logout` require a
+      **user access token** and accept both mobile roles.
     - `/me/dashboard` and everything under `/me/claims` require a **member**
       token. A fact-checker's token is valid and still refused with `403`.
     - Everything under `/fact_checker` requires a **fact-checker** token. A
@@ -82,6 +82,8 @@ tags:
     description: Register, sign in, refresh and password recovery (mobile app)
   - name: Account
     description: The signed-in user, and app configuration
+  - name: Notifications
+    description: The signed-in user's notification feed. Either mobile role.
   - name: Member
     description: A member's own claims, drafts and evidence. Member token only.
   - name: Fact checker
@@ -987,6 +989,196 @@ paths:
               example: { error: { status: 404, message: "Not found" } }
         "422":
           $ref: "#/components/responses/ClaimAlreadySubmitted"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/notifications:
+    get:
+      tags: [Notifications]
+      summary: The signed-in user's notification feed
+      description: |
+        The same feed the web bell reads, so a notification opened in the app is
+        read on the web too. Both roles have one: a fact-checker is told when a
+        claim reaches their queue, a member when theirs is published.
+
+        Newest first, and stable under paging. Two notifications from a single
+        event share a `created_at` to the microsecond, so ties break by id
+        rather than arbitrarily, which would let a row appear on two pages or on
+        neither.
+
+        Listing does **not** mark anything read.
+      operationId: listNotifications
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: filter
+          in: query
+          description: |
+            `unread` for a badge sheet. Anything unrecognised falls back to
+            `all`, and `meta.filter` reports what was actually applied.
+          schema:
+            type: string
+            enum: [all, unread]
+            default: all
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          description: Items per page. Capped at 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: A page of notifications, with the unread count alongside.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+                  meta:
+                    allOf:
+                      - $ref: "#/components/schemas/PageMeta"
+                      - type: object
+                        required: [filter, unread_count]
+                        properties:
+                          filter:
+                            type: string
+                            enum: [all, unread]
+                            description: The filter actually applied, after fallback.
+                          unread_count:
+                            type: integer
+                            description: |
+                              Unread across the whole feed, not just this page,
+                              so a pull to refresh updates the badge without a
+                              second request.
+                            example: 3
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/notifications/unread_count:
+    get:
+      tags: [Notifications]
+      summary: The unread badge, on its own
+      description: |
+        An app polls this far more often than it opens the feed, and should not
+        pay for a page of rows to draw a number.
+      operationId: notificationUnreadCount
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The number of unread notifications.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [unread_count]
+                    properties:
+                      unread_count: { type: integer, example: 3 }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark one notification read
+      description: |
+        Send this when the user taps a row. The app already holds the row and
+        routes on its `target`, so the only thing left to ask the server is to
+        record the read: there is no `show`.
+
+        Idempotent, and deliberately so. A second call leaves `read_at` where it
+        was, because the time a notification was first opened is the only thing
+        that column is good for.
+
+        The notification comes back, so the app can redraw the row without a
+        follow-up read, with the fresh badge in `meta`.
+      operationId: markNotificationRead
+      security:
+        - mobileAccessToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The notification, now read.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: "#/components/schemas/Notification" }
+                  meta:
+                    type: object
+                    required: [unread_count]
+                    properties:
+                      unread_count: { type: integer, example: 2 }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
+        "404":
+          $ref: "#/components/responses/NotificationNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/notifications/read_all:
+    post:
+      tags: [Notifications]
+      summary: Clear the badge
+      description: |
+        Marks every unread notification in the caller's own feed as read, and
+        touches nobody else's.
+      operationId: markAllNotificationsRead
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: How many were marked, and what the badge reads now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [read_count, unread_count]
+                    properties:
+                      read_count:
+                        type: integer
+                        description: How many were unread when the call arrived.
+                        example: 8
+                      unread_count:
+                        type: integer
+                        description: |
+                          Counted again rather than assumed to be zero: a
+                          notification can arrive between the update and the
+                          response, and the badge should read the truth.
+                        example: 0
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -1919,6 +2111,15 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           example: { error: { status: 403, message: "This area is for fact checkers. Members use the member portal." } }
+    NotificationNotFound:
+      description: |
+        No notification with that id in the caller's own feed. Somebody else's
+        is absent rather than forbidden: whose a notification is, is not the
+        caller's business.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 404, message: "Not found" } }
     ClaimNotFound:
       description: |
         No claim with that id among the caller's own. Another member's claim and
@@ -2452,6 +2653,87 @@ components:
           description: "Newest submission first, since `published_at` is null for anything still awaiting approval."
           items: { $ref: "#/components/schemas/WorkingVerdictWithClaim" }
       required: [stats, verdict_breakdown, active_assignments, recent_verdicts]
+
+    Notification:
+      type: object
+      required: [id, type, title, body, read, read_at, created_at, target]
+      properties:
+        id: { type: integer, example: 55 }
+        type:
+          type: string
+          description: |
+            A stable slug for the kind of event, which the app groups and styles
+            rows by. Derived from the notifier, so `ClaimPublishedNotifier`
+            reads `claim_published`.
+          enum:
+            - claim_submitted
+            - claim_in_review
+            - claim_published
+            - claim_unpublished
+            - claim_assigned
+            - claim_reassigned
+            - verdict_published
+          example: claim_in_review
+        title:
+          type: string
+          nullable: true
+          description: One line, already written for a person. Show it as-is.
+          example: Your claim has been assigned
+        body:
+          type: string
+          nullable: true
+          description: |
+            Null when the claim this was about has since been deleted. The row
+            is still worth rendering: its title is the last true thing left to
+            say about it.
+          example: A fact checker has been assigned to "Repro evidence upload".
+        read: { type: boolean, example: false }
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it was first opened. Null while unread.
+        created_at: { type: string, format: date-time }
+        target:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTarget"
+          nullable: true
+          description: |
+            Where to go when the row is tapped, or null when there is nowhere:
+            the notification is for an audience with no app, or its subject has
+            been deleted. Render a null target as plain text, not as something
+            tappable.
+
+    NotificationTarget:
+      type: object
+      required: [type]
+      description: |
+        The subject of a notification, named rather than routed. The web feed
+        carries a URL and lets the browser follow it; a path naming a Rails
+        route says nothing about which of the app's own screens to push, so this
+        names the resource and the app decides.
+
+        Each `type` maps to exactly one endpoint:
+
+        | `type` | fetch from |
+        |---|---|
+        | `claim` | `GET /claims/{id}` |
+        | `my_claim` | `GET /me/claims/{id}` |
+        | `my_claims` | `GET /me/claims` |
+        | `assignment` | `GET /fact_checker/assignments/{id}` |
+        | `assignments` | `GET /fact_checker/assignments` |
+
+        Treat an unrecognised `type` as no target rather than as an error: a new
+        one can appear without an app release.
+      properties:
+        type:
+          type: string
+          enum: [claim, my_claim, my_claims, assignment, assignments]
+          example: my_claim
+        id:
+          type: integer
+          description: Absent on the two list targets, which name no record.
+          example: 345
 
     PageMeta:
       type: object

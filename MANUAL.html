@@ -1324,6 +1324,102 @@ Every entry has a <code>title</code> and a <code>body</code>, and the three SMS 
 <p>Claim titles are often whole sentences, so they are quoted inside body copy to keep the
 surrounding sentence readable: "New claim assigned to you" over
 <code>"Free bus fares for students in September" is now in your queue.</code></p>
+<h3 id="14-7-the-app-reads-the-same-feed">14.7 The app reads the same feed</h3>
+<p>The mobile app reads the same <code>Noticed::Notification</code> rows the web bell reads, so a
+notification opened on a phone is read on the web too. Four endpoints, both roles:</p>
+<table>
+<thead><tr>
+<th>Endpoint</th>
+<th>What it does</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>GET /api/v1/me/notifications</code></td>
+<td>the feed, <code>?filter=unread</code>, paged</td>
+</tr>
+<tr>
+<td><code>GET /api/v1/me/notifications/unread_count</code></td>
+<td>the badge on its own</td>
+</tr>
+<tr>
+<td><code>POST /api/v1/me/notifications/:id/read</code></td>
+<td>mark one read</td>
+</tr>
+<tr>
+<td><code>POST /api/v1/me/notifications/read_all</code></td>
+<td>clear the badge</td>
+</tr>
+</tbody>
+</table>
+<p>There is no <code>show</code>. The web's <code>show</code> marks a notification read and then redirects, because
+a browser needs somewhere to land. An app already holds the row it tapped, so the only
+thing left to ask the server is to record the read.</p>
+<p><strong>Every notifier answers "where does this point" twice.</strong> <code>url</code> is a web path, which names
+a route in a Rails app rather than a screen in an iOS one. Handing that to a native client
+leaves it opening a browser, which throws the user out of the app, or parsing the path with
+a regex and hoping the routes never move. So each notifier also declares a <code>mobile_target</code>,
+naming the <strong>subject</strong> instead, directly under the <code>url</code> it already had:</p>
+<pre><code class="language-ruby">def url
+  fact_checkers_assignment_path(params[:assignment])   # "/fact_checkers/assignments/294"
+end
+def mobile_target
+  { type: "assignment", id: params[:assignment].id }   # { "type": "assignment", "id": 294 }
+end</code></pre>
+<p>Both answers live in one place, so adding a notifier means writing both or noticing you did
+not. That matters where the two differ: <code>ClaimReassignedNotifier</code> points a former checker at
+the queue rather than at the assignment, because by then it belongs to somebody else, and
+<code>mobile_target</code> makes the same call one line below for the same reason.</p>
+<p>Five target types, each naming exactly one endpoint the app fetches from:</p>
+<table>
+<thead><tr>
+<th><code>mobile_target</code></th>
+<th>The app fetches</th>
+<th>Which notifiers</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>{"type": "claim", "id": 259}</code></td>
+<td><code>GET /api/v1/claims/259</code></td>
+<td><code>ClaimPublished</code>, <code>VerdictPublished</code></td>
+</tr>
+<tr>
+<td><code>{"type": "my_claim", "id": 345}</code></td>
+<td><code>GET /api/v1/me/claims/345</code></td>
+<td><code>ClaimSubmitted</code>, <code>ClaimInReview</code></td>
+</tr>
+<tr>
+<td><code>{"type": "my_claims"}</code></td>
+<td><code>GET /api/v1/me/claims</code></td>
+<td><code>ClaimUnpublished</code></td>
+</tr>
+<tr>
+<td><code>{"type": "assignment", "id": 294}</code></td>
+<td><code>GET /api/v1/fact_checker/assignments/294</code></td>
+<td><code>ClaimAssigned</code></td>
+</tr>
+<tr>
+<td><code>{"type": "assignments"}</code></td>
+<td><code>GET /api/v1/fact_checker/assignments</code></td>
+<td><code>ClaimReassigned</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>ClaimPublishedNotifier</code> points at the <strong>public</strong> fact check rather than at the member's own
+copy, because the published article is what the member is being told about, which is the
+same reason its <code>url</code> is <code>marketplace_path</code>. <code>ClaimUnpublishedNotifier</code> points at the list
+rather than at the claim, because an unpublished claim's own screen is unreachable, again
+matching the web.</p>
+<p><strong>A null target means there is nowhere to go</strong>, and the app should render the row as text
+rather than as something tappable. Two cases produce one: the three admin-only notifiers,
+whose audience has no app, and a notification whose claim has since been deleted. The second
+is why the serializer rescues <code>title</code>, <code>body</code> and <code>target</code> independently. A notification
+renders itself from whatever the notifier captured when it fired, those records can be gone
+by the time anyone opens the feed, and one dangling row must not take a whole screen down,
+which on a phone is a blank page with no way past it.</p>
+<p>The feed orders by <code>created_at</code> and then by <code>id</code>. The gem's <code>newest_first</code> orders on
+<code>created_at</code> alone, and two notifications from a single event share it to the microsecond;
+on a paged feed an arbitrary tiebreak lets a row appear on two pages or on neither.</p>
+<p>Push notifications are not built. This is the feed the app reads; APNs and FCM come later.</p>
       </section>
 
       <hr class="divider">
@@ -1559,7 +1655,7 @@ disables one.</p>
 <p>Written for the mobile team. The <a href="api.html">Swagger reference</a> says what each endpoint
 accepts and returns; this section says <strong>when to call it, in what order, and what to do
 with the answer</strong>. Each journey follows one person through one task.</p>
-<ul><li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li><li><strong>Credential:</strong> an access token from <code>POST /auth/login</code>, sent as <code>Authorization: Bearer &lt;access_token&gt;</code>. The app ships <strong>no</strong> API key. The partner key described in §21 is a different credential for a different audience: never put one in the app.</li><li><strong>Two roles reach the app:</strong> members of the public, and accredited fact-checkers. Administrators are refused and told to use the web portal.</li><li><strong>Three tiers of endpoint.</strong> <code>/claims</code>, <code>/claims/:id</code>, <code>/claims/:id/related</code> and <code>/marketplace/facets</code> take either credential. <code>/me</code>, <code>/taxonomies</code> and <code>/auth/logout</code> take any user token. Everything under <code>/me/claims</code> is members only and everything under <code>/fact_checker</code> is fact-checkers only, each refusing the other role with <code>403</code> (§22.15).</li></ul>
+<ul><li><strong>Base URL:</strong> <code>https://kasagadi.ai/api/v1</code></li><li><strong>Credential:</strong> an access token from <code>POST /auth/login</code>, sent as <code>Authorization: Bearer &lt;access_token&gt;</code>. The app ships <strong>no</strong> API key. The partner key described in §21 is a different credential for a different audience: never put one in the app.</li><li><strong>Two roles reach the app:</strong> members of the public, and accredited fact-checkers. Administrators are refused and told to use the web portal.</li><li><strong>Three tiers of endpoint.</strong> <code>/claims</code>, <code>/claims/:id</code>, <code>/claims/:id/related</code> and <code>/marketplace/facets</code> take either credential. <code>/me</code>, <code>/me/notifications</code>, <code>/taxonomies</code> and <code>/auth/logout</code> take any user token. Everything under <code>/me/claims</code> is members only and everything under <code>/fact_checker</code> is fact-checkers only, each refusing the other role with <code>403</code> (§22.16).</li></ul>
 <h3 id="22-1-the-two-tokens-in-one-paragraph">22.1 The two tokens, in one paragraph</h3>
 <p>Signing in returns a pair. The <strong>access token</strong> rides on every request and lasts
 <strong>30 minutes</strong>. The <strong>refresh token</strong> does nothing but buy a new pair, and lasts
@@ -1901,9 +1997,9 @@ can still be discarded if an admin reassigns the claim, so gate the "fact checke
 <code>status == "published"</code> and take the date it went live from <code>verdict.checked_at</code>.</p>
 <p><strong>A claim can also vanish.</strong> An admin can unpublish one, and unpublished claims are filtered
 out of everything a member reads: it drops off the dashboard, and <code>GET /me/claims/88</code> starts
-answering <code>404</code>. The platform does tell Ama, but there is no notifications endpoint in the
-mobile API yet, so the app cannot show her that. Treat a <code>404</code> on a claim you were already
-displaying as a stale screen: return to the list rather than showing an error.</p>
+answering <code>404</code>. Ama is told, and her notification feed carries it (§22.14), but the app may
+well render the <code>404</code> first. Treat a <code>404</code> on a claim you were already displaying as a stale
+screen: return to the list rather than showing an error.</p>
 <h3 id="22-10-kofi-edits-one-draft-discards-another-and-is-refused-on-a-third-claim">22.10 Kofi edits one draft, discards another, and is refused on a third claim</h3>
 <p><em>Kofi has two drafts and one claim he sent yesterday.</em></p>
 <p><strong>Editing a draft</strong> is a <code>PATCH</code>, and only the keys sent are written, so an app correcting a
@@ -2057,14 +2153,109 @@ and do not treat that <code>404</code> as a fault.</p>
 entry is written, all in one transaction: a half-applied rejection would leave a claim nobody
 is working on and nobody has been told about. The member is deliberately <strong>not</strong> notified,
 because from their side nothing has changed and the claim is still being worked on.</p>
-<h3 id="22-14-kwame-the-administrator-tries-the-app">22.14 Kwame the administrator tries the app</h3>
+<h3 id="22-14-kofi-and-akosua-open-their-notifications">22.14 Kofi and Akosua open their notifications</h3>
+<p><em>Kofi's claim went live overnight. Akosua has a new claim in her queue. Both open the app to
+a badge on the bell.</em></p>
+<p>The feed is the same table the web bell reads, so a notification opened on the phone is read
+on the web too. Both roles have one, and the endpoints are identical for each.</p>
+<p><strong>On cold start, and whenever the app comes back to the foreground,</strong> ask for the number
+alone. Polling the whole feed to draw a badge is a page of rows paid for one integer.</p>
+<pre><code>GET /api/v1/me/notifications/unread_count</code></pre>
+<pre><code class="language-json">{ "data": { "unread_count": 3 } }</code></pre>
+<p><strong>When the bell is tapped,</strong> fetch the feed. Listing marks nothing read.</p>
+<pre><code>GET /api/v1/me/notifications?page=1&amp;per_page=20</code></pre>
+<pre><code class="language-json">{ "data": [
+    { "id": 57, "type": "claim_assigned",
+      "title": "New claim assigned to you",
+      "body": "\"Free bus fares for students in September\" is now in your queue.",
+      "read": false, "read_at": null, "created_at": "2026-08-29T14:48:20Z",
+      "target": { "type": "assignment", "id": 294 } },
+    { "id": 55, "type": "claim_in_review",
+      "title": "Your claim has been assigned",
+      "body": "A fact checker has been assigned to \"Free bus fares for students in September\".",
+      "read": true, "read_at": "2026-08-29T07:12:04Z", "created_at": "2026-08-28T18:11:41Z",
+      "target": { "type": "my_claim", "id": 345 } } ],
+  "meta": { "filter": "all", "page": 1, "per_page": 20,
+            "total_pages": 3, "total_count": 41, "unread_count": 3 } }</code></pre>
+<p><code>meta.unread_count</code> is the whole feed, not this page, so a pull to refresh updates the badge
+without a second request. <code>?filter=unread</code> narrows the list for a badge sheet; anything
+unrecognised falls back to <code>all</code>, and <code>meta.filter</code> reports what was actually applied.</p>
+<p><strong>Render <code>title</code> and <code>body</code> as they arrive.</strong> Both are written for a person, already
+localised, and already quote the claim title so the surrounding sentence reads. Do not build
+copy from <code>type</code>: it is there to group and style rows, not to be spoken.</p>
+<p><strong>Tapping a row does two independent things.</strong> Record the read, and navigate. Neither waits
+on the other, and the navigation comes from <code>target</code>, not from the response.</p>
+<pre><code>POST /api/v1/me/notifications/57/read</code></pre>
+<pre><code class="language-json">{ "data": { "id": 57, "read": true, "read_at": "2026-08-29T15:02:11Z", "…": "…" },
+  "meta": { "unread_count": 2 } }</code></pre>
+<p>The notification comes back so the row can be redrawn without a follow-up read, with the
+fresh badge in <code>meta</code>. The call is idempotent: a second one leaves <code>read_at</code> where it was,
+because the time a notification was first opened is the only thing that column is good for.
+There is no <code>GET /me/notifications/:id</code>, and none is needed: the app already holds the row.</p>
+<p><strong><code>target</code> is how the app navigates.</strong> It names the subject rather than a route, because a
+web path names a screen in a browser and says nothing about which of the app's own screens
+to push. Five types, each mapping to exactly one endpoint:</p>
+<table>
+<thead><tr>
+<th><code>target</code></th>
+<th>Push</th>
+<th>Fetch from</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>{"type": "claim", "id": 259}</code></td>
+<td>the public fact check</td>
+<td><code>GET /claims/259</code></td>
+</tr>
+<tr>
+<td><code>{"type": "my_claim", "id": 345}</code></td>
+<td>the member's own claim</td>
+<td><code>GET /me/claims/345</code></td>
+</tr>
+<tr>
+<td><code>{"type": "my_claims"}</code></td>
+<td>the member's claim list</td>
+<td><code>GET /me/claims</code></td>
+</tr>
+<tr>
+<td><code>{"type": "assignment", "id": 294}</code></td>
+<td>the assignment</td>
+<td><code>GET /fact_checker/assignments/294</code></td>
+</tr>
+<tr>
+<td><code>{"type": "assignments"}</code></td>
+<td>the queue</td>
+<td><code>GET /fact_checker/assignments</code></td>
+</tr>
+</tbody>
+</table>
+<p>Switch on <code>type</code>, and <strong>treat an unrecognised one as no target</strong>, the same as null. A new
+notifier can ship without an app release, and an app that crashes on a <code>type</code> it has not met
+would make every future notifier a coordinated deploy.</p>
+<p><strong>A null <code>target</code> means there is nowhere to go.</strong> Render that row as plain text rather than
+as something tappable. It happens when the claim behind a notification has since been
+deleted, in which case <code>body</code> is null too and only <code>title</code> survives. The row is still worth
+showing: it is the last true thing left to say.</p>
+<pre><code class="language-json">{ "id": 47, "type": "claim_submitted", "title": "Claim received",
+  "body": null, "read": true, "target": null }</code></pre>
+<p><strong>Clearing the badge</strong> marks every unread notification in the caller's own feed:</p>
+<pre><code>POST /api/v1/me/notifications/read_all</code></pre>
+<pre><code class="language-json">{ "data": { "read_count": 8, "unread_count": 0 } }</code></pre>
+<p><strong>A <code>404</code> on a read is somebody else's notification</strong>, not a permission error. A feed is
+scoped to its owner, and whose a notification is, is not the caller's business.</p>
+<p><strong>A target can go stale.</strong> A claim that was published when the notification fired can be
+unpublished by the time it is opened, so <code>GET /claims/259</code> answers <code>404</code>. Handle it the way
+every other stale screen is handled: return to the list rather than showing an error.</p>
+<p><strong>Push notifications do not exist yet.</strong> This is the feed the app reads while it is open.
+APNs and FCM come later, and will not change these four endpoints.</p>
+<h3 id="22-15-kwame-the-administrator-tries-the-app">22.15 Kwame the administrator tries the app</h3>
 <p><em>Kwame runs the platform. He downloads the app and enters his working credentials.</em></p>
 <p>He gets <code>403</code> and "Administrators sign in on the web portal." His password was correct;
 mobile simply is not for him. The app should show that message and link to the website,
 not offer a retry.</p>
 <p>This holds even if his account also has a member record, and it is re-checked on <strong>every</strong>
 request, not just at sign-in.</p>
-<h3 id="22-15-what-each-role-is-refused-and-why-a-missing-record-is-a-404">22.15 What each role is refused, and why a missing record is a 404</h3>
+<h3 id="22-16-what-each-role-is-refused-and-why-a-missing-record-is-a-404">22.16 What each role is refused, and why a missing record is a 404</h3>
 <p>A token belongs to a member or to a fact checker, and the two tiers do not overlap.</p>
 <table>
 <thead><tr>
@@ -2112,7 +2303,7 @@ stale link in an email is worth explaining to a person; the API does not have th
 <p><strong>So do not render "you do not have permission" for a <code>404</code> on one of these paths.</strong> "That
 claim is no longer available" is both truer and less alarming. The one place a wrong role
 really is a <code>403</code> is the tier itself, and that says nothing about any particular record.</p>
-<h3 id="22-16-kofi-s-account-is-suspended-while-he-is-using-it">22.16 Kofi's account is suspended while he is using it</h3>
+<h3 id="22-17-kofi-s-account-is-suspended-while-he-is-using-it">22.17 Kofi's account is suspended while he is using it</h3>
 <p><em>A moderator suspends Kofi mid-session.</em></p>
 <p>His tokens stop working immediately: suspension destroys every session, so the next call
 returns <code>401</code> and the refresh fails too. There is no grace period and no push notification.</p>
@@ -2121,7 +2312,7 @@ expiry. Clear credentials, return to sign-in, and let his next sign-in attempt s
 real reason (<code>403</code> with the suspension message).</p>
 <p>The same applies if his role changes: an account promoted to administrator, or one that
 loses its member record, stops working mid-session by design.</p>
-<h3 id="22-17-kofi-is-on-a-bad-network">22.17 Kofi is on a bad network</h3>
+<h3 id="22-18-kofi-is-on-a-bad-network">22.18 Kofi is on a bad network</h3>
 <p><em>Kofi is on 3G in Tamale. Requests time out; he taps twice.</em></p>
 <ul><li><strong>Retrying <code>POST /auth/login</code></strong> is safe. It creates a second session rather than replacing the first, which is fine. Sessions are per device and cheap.</li><li><strong>Retrying <code>POST /auth/refresh</code> with the same token is not.</strong> If the first attempt reached the server, the token is spent and the retry returns <code>401</code>. Treat a timed-out refresh as unknown, not failed: retry once, and on <code>401</code> re-authenticate rather than looping.</li><li><strong>Double-tapping "Send code"</strong> is safe. Each request replaces the previous code, so only the most recent email works. If Kofi reads the older message, the code is rejected. It is worth saying "use the most recent code" on the entry screen.</li><li><strong>Double-tapping "Register"</strong> returns <code>422 has already been taken</code> on the second, not a crash. Treat it as "you already have an account" rather than a hard error.</li></ul>
 <p><strong>Rate limits</strong> return <code>429</code>. Back off and show a plain message; do not retry in a tight
@@ -2161,7 +2352,7 @@ loop.</p>
 <p>These are keyed by identity rather than by IP address on purpose: a large share of
 Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
 IP-keyed limit would have users locking each other out.</p>
-<h3 id="22-18-errors-in-one-shape">22.18 Errors, in one shape</h3>
+<h3 id="22-19-errors-in-one-shape">22.19 Errors, in one shape</h3>
 <p>Every failure uses the same envelope, so one parser covers the whole API:</p>
 <pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
              "details": { "email_address": ["has already been taken"] } } }</code></pre>
@@ -2211,8 +2402,8 @@ is written for a person and can be shown as-is.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="22-19-checklist-before-the-first-build-ships">22.19 Checklist before the first build ships</h3>
-<ul class="checklist"><li><input type="checkbox" disabled> Tokens are in the device keychain, never in plain preferences, and never logged.</li><li><input type="checkbox" disabled> A single-flight refresh interceptor handles <code>401</code> and replays the request once.</li><li><input type="checkbox" disabled> A refresh replaces <strong>both</strong> stored tokens; the old access token is never reused.</li><li><input type="checkbox" disabled> <code>role</code> from <code>/me</code> drives navigation; <code>abilities</code> only shows and hides controls.</li><li><input type="checkbox" disabled> Upload limits and vocabularies are read from <code>/config</code>, not hard-coded.</li><li><input type="checkbox" disabled> Topic, region and verdict pickers are built from <code>/taxonomies</code>, sending <code>value</code> and showing <code>label</code>.</li><li><input type="checkbox" disabled> <code>min_supported_app_version</code> is checked on cold start.</li><li><input type="checkbox" disabled> The reset code is sent as <code>reset_code</code> in the body, not in the URL.</li><li><input type="checkbox" disabled> Evidence and verdict uploads are a single <code>multipart/form-data</code> request, with <code>evidence[files][]</code> and <code>verdict[documents][]</code> repeated once per file.</li><li><input type="checkbox" disabled> Every write response is used to redraw the screen, with no follow-up read.</li><li><input type="checkbox" disabled> Edit and delete controls are hidden once a claim's <code>status</code> leaves <code>draft</code>.</li><li><input type="checkbox" disabled> "Fact checked" is gated on <code>status == "published"</code>, not on a verdict existing.</li><li><input type="checkbox" disabled> <code>can_start</code>, <code>can_reject</code> and <code>verdict_editable</code> drive the fact-checker buttons, with the <code>422</code> treated as the backstop for a stale screen.</li><li><input type="checkbox" disabled> Rejecting an assignment navigates back to the queue; the detail screen is not refreshed, because it now answers <code>404</code>.</li><li><input type="checkbox" disabled> <code>403</code> on sign-in is a dead end with the server's message, not a retry loop.</li><li><input type="checkbox" disabled> <code>404</code> on someone else's record is shown as "no longer available", not as a permission error.</li><li><input type="checkbox" disabled> <code>422</code> <code>details</code> are rendered per field, and <code>details.base</code> as a form-level message.</li><li><input type="checkbox" disabled> Sign-out clears local credentials even when the request fails.</li><li><input type="checkbox" disabled> Nothing in the app contains a <code>kg_live_…</code> partner key.</li></ul>
+<h3 id="22-20-checklist-before-the-first-build-ships">22.20 Checklist before the first build ships</h3>
+<ul class="checklist"><li><input type="checkbox" disabled> Tokens are in the device keychain, never in plain preferences, and never logged.</li><li><input type="checkbox" disabled> A single-flight refresh interceptor handles <code>401</code> and replays the request once.</li><li><input type="checkbox" disabled> A refresh replaces <strong>both</strong> stored tokens; the old access token is never reused.</li><li><input type="checkbox" disabled> <code>role</code> from <code>/me</code> drives navigation; <code>abilities</code> only shows and hides controls.</li><li><input type="checkbox" disabled> Upload limits and vocabularies are read from <code>/config</code>, not hard-coded.</li><li><input type="checkbox" disabled> Topic, region and verdict pickers are built from <code>/taxonomies</code>, sending <code>value</code> and showing <code>label</code>.</li><li><input type="checkbox" disabled> <code>min_supported_app_version</code> is checked on cold start.</li><li><input type="checkbox" disabled> The reset code is sent as <code>reset_code</code> in the body, not in the URL.</li><li><input type="checkbox" disabled> Evidence and verdict uploads are a single <code>multipart/form-data</code> request, with <code>evidence[files][]</code> and <code>verdict[documents][]</code> repeated once per file.</li><li><input type="checkbox" disabled> Every write response is used to redraw the screen, with no follow-up read.</li><li><input type="checkbox" disabled> Edit and delete controls are hidden once a claim's <code>status</code> leaves <code>draft</code>.</li><li><input type="checkbox" disabled> "Fact checked" is gated on <code>status == "published"</code>, not on a verdict existing.</li><li><input type="checkbox" disabled> <code>can_start</code>, <code>can_reject</code> and <code>verdict_editable</code> drive the fact-checker buttons, with the <code>422</code> treated as the backstop for a stale screen.</li><li><input type="checkbox" disabled> Rejecting an assignment navigates back to the queue; the detail screen is not refreshed, because it now answers <code>404</code>.</li><li><input type="checkbox" disabled> <code>403</code> on sign-in is a dead end with the server's message, not a retry loop.</li><li><input type="checkbox" disabled> <code>404</code> on someone else's record is shown as "no longer available", not as a permission error.</li><li><input type="checkbox" disabled> The bell badge is drawn from <code>/me/notifications/unread_count</code>, not by fetching a page of the feed.</li><li><input type="checkbox" disabled> Notification rows show <code>title</code> and <code>body</code> as they arrive; no copy is built from <code>type</code>.</li><li><input type="checkbox" disabled> Tapping a row navigates from <code>target</code> and records the read separately, with neither waiting on the other.</li><li><input type="checkbox" disabled> An unrecognised <code>target.type</code>, and a null <code>target</code>, both render as plain text rather than as a tappable row.</li><li><input type="checkbox" disabled> <code>422</code> <code>details</code> are rendered per field, and <code>details.base</code> as a form-level message.</li><li><input type="checkbox" disabled> Sign-out clears local credentials even when the request fails.</li><li><input type="checkbox" disabled> Nothing in the app contains a <code>kg_live_…</code> partner key.</li></ul>
       </section>
     </article>
 

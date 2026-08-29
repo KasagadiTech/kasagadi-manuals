@@ -659,6 +659,73 @@ Claim titles are often whole sentences, so they are quoted inside body copy to k
 surrounding sentence readable: "New claim assigned to you" over
 `"Free bus fares for students in September" is now in your queue.`
 
+### 14.7 The app reads the same feed
+
+The mobile app reads the same `Noticed::Notification` rows the web bell reads, so a
+notification opened on a phone is read on the web too. Four endpoints, both roles:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/v1/me/notifications` | the feed, `?filter=unread`, paged |
+| `GET /api/v1/me/notifications/unread_count` | the badge on its own |
+| `POST /api/v1/me/notifications/:id/read` | mark one read |
+| `POST /api/v1/me/notifications/read_all` | clear the badge |
+
+There is no `show`. The web's `show` marks a notification read and then redirects, because
+a browser needs somewhere to land. An app already holds the row it tapped, so the only
+thing left to ask the server is to record the read.
+
+**Every notifier answers "where does this point" twice.** `url` is a web path, which names
+a route in a Rails app rather than a screen in an iOS one. Handing that to a native client
+leaves it opening a browser, which throws the user out of the app, or parsing the path with
+a regex and hoping the routes never move. So each notifier also declares a `mobile_target`,
+naming the **subject** instead, directly under the `url` it already had:
+
+```ruby
+def url
+  fact_checkers_assignment_path(params[:assignment])   # "/fact_checkers/assignments/294"
+end
+
+def mobile_target
+  { type: "assignment", id: params[:assignment].id }   # { "type": "assignment", "id": 294 }
+end
+```
+
+Both answers live in one place, so adding a notifier means writing both or noticing you did
+not. That matters where the two differ: `ClaimReassignedNotifier` points a former checker at
+the queue rather than at the assignment, because by then it belongs to somebody else, and
+`mobile_target` makes the same call one line below for the same reason.
+
+Five target types, each naming exactly one endpoint the app fetches from:
+
+| `mobile_target` | The app fetches | Which notifiers |
+|---|---|---|
+| `{"type": "claim", "id": 259}` | `GET /api/v1/claims/259` | `ClaimPublished`, `VerdictPublished` |
+| `{"type": "my_claim", "id": 345}` | `GET /api/v1/me/claims/345` | `ClaimSubmitted`, `ClaimInReview` |
+| `{"type": "my_claims"}` | `GET /api/v1/me/claims` | `ClaimUnpublished` |
+| `{"type": "assignment", "id": 294}` | `GET /api/v1/fact_checker/assignments/294` | `ClaimAssigned` |
+| `{"type": "assignments"}` | `GET /api/v1/fact_checker/assignments` | `ClaimReassigned` |
+
+`ClaimPublishedNotifier` points at the **public** fact check rather than at the member's own
+copy, because the published article is what the member is being told about, which is the
+same reason its `url` is `marketplace_path`. `ClaimUnpublishedNotifier` points at the list
+rather than at the claim, because an unpublished claim's own screen is unreachable, again
+matching the web.
+
+**A null target means there is nowhere to go**, and the app should render the row as text
+rather than as something tappable. Two cases produce one: the three admin-only notifiers,
+whose audience has no app, and a notification whose claim has since been deleted. The second
+is why the serializer rescues `title`, `body` and `target` independently. A notification
+renders itself from whatever the notifier captured when it fired, those records can be gone
+by the time anyone opens the feed, and one dangling row must not take a whole screen down,
+which on a phone is a blank page with no way past it.
+
+The feed orders by `created_at` and then by `id`. The gem's `newest_first` orders on
+`created_at` alone, and two notifications from a single event share it to the microsecond;
+on a paged feed an arbitrary tiebreak lets a row appear on two pages or on neither.
+
+Push notifications are not built. This is the feed the app reads; APNs and FCM come later.
+
 ---
 
 ## Storage
@@ -850,9 +917,9 @@ with the answer**. Each journey follows one person through one task.
 - **Two roles reach the app:** members of the public, and accredited fact-checkers.
   Administrators are refused and told to use the web portal.
 - **Three tiers of endpoint.** `/claims`, `/claims/:id`, `/claims/:id/related` and
-  `/marketplace/facets` take either credential. `/me`, `/taxonomies` and `/auth/logout` take
-  any user token. Everything under `/me/claims` is members only and everything under
-  `/fact_checker` is fact-checkers only, each refusing the other role with `403` (§22.15).
+  `/marketplace/facets` take either credential. `/me`, `/me/notifications`, `/taxonomies`
+  and `/auth/logout` take any user token. Everything under `/me/claims` is members only and everything under
+  `/fact_checker` is fact-checkers only, each refusing the other role with `403` (§22.16).
 
 ### 22.1 The two tokens, in one paragraph
 
@@ -1267,9 +1334,9 @@ can still be discarded if an admin reassigns the claim, so gate the "fact checke
 
 **A claim can also vanish.** An admin can unpublish one, and unpublished claims are filtered
 out of everything a member reads: it drops off the dashboard, and `GET /me/claims/88` starts
-answering `404`. The platform does tell Ama, but there is no notifications endpoint in the
-mobile API yet, so the app cannot show her that. Treat a `404` on a claim you were already
-displaying as a stale screen: return to the list rather than showing an error.
+answering `404`. Ama is told, and her notification feed carries it (§22.14), but the app may
+well render the `404` first. Treat a `404` on a claim you were already displaying as a stale
+screen: return to the list rather than showing an error.
 
 ### 22.10 Kofi edits one draft, discards another, and is refused on a third claim
 
@@ -1461,7 +1528,119 @@ entry is written, all in one transaction: a half-applied rejection would leave a
 is working on and nobody has been told about. The member is deliberately **not** notified,
 because from their side nothing has changed and the claim is still being worked on.
 
-### 22.14 Kwame the administrator tries the app
+### 22.14 Kofi and Akosua open their notifications
+
+*Kofi's claim went live overnight. Akosua has a new claim in her queue. Both open the app to
+a badge on the bell.*
+
+The feed is the same table the web bell reads, so a notification opened on the phone is read
+on the web too. Both roles have one, and the endpoints are identical for each.
+
+**On cold start, and whenever the app comes back to the foreground,** ask for the number
+alone. Polling the whole feed to draw a badge is a page of rows paid for one integer.
+
+```
+GET /api/v1/me/notifications/unread_count
+```
+
+```json
+{ "data": { "unread_count": 3 } }
+```
+
+**When the bell is tapped,** fetch the feed. Listing marks nothing read.
+
+```
+GET /api/v1/me/notifications?page=1&per_page=20
+```
+
+```json
+{ "data": [
+    { "id": 57, "type": "claim_assigned",
+      "title": "New claim assigned to you",
+      "body": "\"Free bus fares for students in September\" is now in your queue.",
+      "read": false, "read_at": null, "created_at": "2026-08-29T14:48:20Z",
+      "target": { "type": "assignment", "id": 294 } },
+    { "id": 55, "type": "claim_in_review",
+      "title": "Your claim has been assigned",
+      "body": "A fact checker has been assigned to \"Free bus fares for students in September\".",
+      "read": true, "read_at": "2026-08-29T07:12:04Z", "created_at": "2026-08-28T18:11:41Z",
+      "target": { "type": "my_claim", "id": 345 } } ],
+  "meta": { "filter": "all", "page": 1, "per_page": 20,
+            "total_pages": 3, "total_count": 41, "unread_count": 3 } }
+```
+
+`meta.unread_count` is the whole feed, not this page, so a pull to refresh updates the badge
+without a second request. `?filter=unread` narrows the list for a badge sheet; anything
+unrecognised falls back to `all`, and `meta.filter` reports what was actually applied.
+
+**Render `title` and `body` as they arrive.** Both are written for a person, already
+localised, and already quote the claim title so the surrounding sentence reads. Do not build
+copy from `type`: it is there to group and style rows, not to be spoken.
+
+**Tapping a row does two independent things.** Record the read, and navigate. Neither waits
+on the other, and the navigation comes from `target`, not from the response.
+
+```
+POST /api/v1/me/notifications/57/read
+```
+
+```json
+{ "data": { "id": 57, "read": true, "read_at": "2026-08-29T15:02:11Z", "…": "…" },
+  "meta": { "unread_count": 2 } }
+```
+
+The notification comes back so the row can be redrawn without a follow-up read, with the
+fresh badge in `meta`. The call is idempotent: a second one leaves `read_at` where it was,
+because the time a notification was first opened is the only thing that column is good for.
+There is no `GET /me/notifications/:id`, and none is needed: the app already holds the row.
+
+**`target` is how the app navigates.** It names the subject rather than a route, because a
+web path names a screen in a browser and says nothing about which of the app's own screens
+to push. Five types, each mapping to exactly one endpoint:
+
+| `target` | Push | Fetch from |
+|---|---|---|
+| `{"type": "claim", "id": 259}` | the public fact check | `GET /claims/259` |
+| `{"type": "my_claim", "id": 345}` | the member's own claim | `GET /me/claims/345` |
+| `{"type": "my_claims"}` | the member's claim list | `GET /me/claims` |
+| `{"type": "assignment", "id": 294}` | the assignment | `GET /fact_checker/assignments/294` |
+| `{"type": "assignments"}` | the queue | `GET /fact_checker/assignments` |
+
+Switch on `type`, and **treat an unrecognised one as no target**, the same as null. A new
+notifier can ship without an app release, and an app that crashes on a `type` it has not met
+would make every future notifier a coordinated deploy.
+
+**A null `target` means there is nowhere to go.** Render that row as plain text rather than
+as something tappable. It happens when the claim behind a notification has since been
+deleted, in which case `body` is null too and only `title` survives. The row is still worth
+showing: it is the last true thing left to say.
+
+```json
+{ "id": 47, "type": "claim_submitted", "title": "Claim received",
+  "body": null, "read": true, "target": null }
+```
+
+**Clearing the badge** marks every unread notification in the caller's own feed:
+
+```
+POST /api/v1/me/notifications/read_all
+```
+
+```json
+{ "data": { "read_count": 8, "unread_count": 0 } }
+```
+
+**A `404` on a read is somebody else's notification**, not a permission error. A feed is
+scoped to its owner, and whose a notification is, is not the caller's business.
+
+**A target can go stale.** A claim that was published when the notification fired can be
+unpublished by the time it is opened, so `GET /claims/259` answers `404`. Handle it the way
+every other stale screen is handled: return to the list rather than showing an error.
+
+**Push notifications do not exist yet.** This is the feed the app reads while it is open.
+APNs and FCM come later, and will not change these four endpoints.
+
+### 22.15 Kwame the administrator tries the app
 
 *Kwame runs the platform. He downloads the app and enters his working credentials.*
 
@@ -1472,7 +1651,7 @@ not offer a retry.
 This holds even if his account also has a member record, and it is re-checked on **every**
 request, not just at sign-in.
 
-### 22.15 What each role is refused, and why a missing record is a 404
+### 22.16 What each role is refused, and why a missing record is a 404
 
 A token belongs to a member or to a fact checker, and the two tiers do not overlap.
 
@@ -1504,7 +1683,7 @@ stale link in an email is worth explaining to a person; the API does not have th
 claim is no longer available" is both truer and less alarming. The one place a wrong role
 really is a `403` is the tier itself, and that says nothing about any particular record.
 
-### 22.16 Kofi's account is suspended while he is using it
+### 22.17 Kofi's account is suspended while he is using it
 
 *A moderator suspends Kofi mid-session.*
 
@@ -1518,7 +1697,7 @@ real reason (`403` with the suspension message).
 The same applies if his role changes: an account promoted to administrator, or one that
 loses its member record, stops working mid-session by design.
 
-### 22.17 Kofi is on a bad network
+### 22.18 Kofi is on a bad network
 
 *Kofi is on 3G in Tamale. Requests time out; he taps twice.*
 
@@ -1550,7 +1729,7 @@ These are keyed by identity rather than by IP address on purpose: a large share 
 Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
 IP-keyed limit would have users locking each other out.
 
-### 22.18 Errors, in one shape
+### 22.19 Errors, in one shape
 
 Every failure uses the same envelope, so one parser covers the whole API:
 
@@ -1572,7 +1751,7 @@ is written for a person and can be shown as-is.
 | `429` | Rate limited | Back off, show a plain message. |
 | `5xx` | Server fault | Retry with backoff; show a generic failure. |
 
-### 22.19 Checklist before the first build ships
+### 22.20 Checklist before the first build ships
 
 - [ ] Tokens are in the device keychain, never in plain preferences, and never logged.
 - [ ] A single-flight refresh interceptor handles `401` and replays the request once.
@@ -1595,6 +1774,13 @@ is written for a person and can be shown as-is.
 - [ ] `403` on sign-in is a dead end with the server's message, not a retry loop.
 - [ ] `404` on someone else's record is shown as "no longer available", not as a permission
       error.
+- [ ] The bell badge is drawn from `/me/notifications/unread_count`, not by fetching a page
+      of the feed.
+- [ ] Notification rows show `title` and `body` as they arrive; no copy is built from `type`.
+- [ ] Tapping a row navigates from `target` and records the read separately, with neither
+      waiting on the other.
+- [ ] An unrecognised `target.type`, and a null `target`, both render as plain text rather
+      than as a tappable row.
 - [ ] `422` `details` are rendered per field, and `details.base` as a form-level message.
 - [ ] Sign-out clears local credentials even when the request fails.
 - [ ] Nothing in the app contains a `kg_live_…` partner key.
