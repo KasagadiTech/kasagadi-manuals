@@ -1366,8 +1366,8 @@ act on is the lesser harm.</li>
 <p><strong>Delivery receipts.</strong> Hubtel's send response only confirms Hubtel took the message, and a
 2xx is not enough on its own: a rejection arrives as a 2xx carrying a non-zero status and a
 description, so acceptance is the payload status, not the HTTP code. <code>HubtelStatusJob</code> asks
-for the telco's verdict a minute after the send, and re-checks up to three times, ten minutes
-apart. <code>delivered</code> and <code>failed</code> are final; "Pending" and "Sent" are not. A row that never
+for the telco's verdict a minute after the send, then re-checks up to twice more, ten minutes
+apart, so three checks in all. <code>delivered</code> and <code>failed</code> are final; "Pending" and "Sent" are not. A row that never
 settles keeps its <code>sent</code> status and its raw provider status, which is the honest description
 of what we know.</p>
 <h3 id="14-6-where-the-copy-lives">14.6 Where the copy lives</h3>
@@ -2450,11 +2450,11 @@ loop.</p>
 <tbody>
 <tr>
 <td><code>POST /auth/login</code></td>
-<td>10 per 3 minutes, per email address</td>
+<td>10 per 3 minutes, per email address and IP</td>
 </tr>
 <tr>
 <td><code>POST /auth/register</code></td>
-<td>5 per hour, per email address</td>
+<td>5 per hour, per email address and IP</td>
 </tr>
 <tr>
 <td><code>POST /auth/refresh</code></td>
@@ -2469,14 +2469,20 @@ loop.</p>
 <td>10 per 15 minutes, per email address</td>
 </tr>
 <tr>
+<td><code>POST /chat/messages</code></td>
+<td>20 per minute, per signed-in user</td>
+</tr>
+<tr>
 <td>Everything else</td>
 <td>300 per minute, per signed-in user</td>
 </tr>
 </tbody>
 </table>
-<p>These are keyed by identity rather than by IP address on purpose: a large share of
-Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
-IP-keyed limit would have users locking each other out.</p>
+<p>The authenticated limits key on the signed-in user rather than the IP address on
+purpose: a large share of Ghanaian mobile traffic leaves through a small number of
+carrier addresses, and an IP-keyed limit would have users locking each other out. The
+unauthenticated auth endpoints add a wider per-IP ceiling behind the per-identity limit
+above, as a backstop against a single address hammering them.</p>
 <h3 id="22-20-errors-in-one-shape">22.20 Errors, in one shape</h3>
 <p>Every failure uses the same envelope, so one parser covers the whole API:</p>
 <pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",

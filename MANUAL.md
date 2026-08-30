@@ -690,8 +690,8 @@ Three more behaviours that are easy to miss:
 **Delivery receipts.** Hubtel's send response only confirms Hubtel took the message, and a
 2xx is not enough on its own: a rejection arrives as a 2xx carrying a non-zero status and a
 description, so acceptance is the payload status, not the HTTP code. `HubtelStatusJob` asks
-for the telco's verdict a minute after the send, and re-checks up to three times, ten minutes
-apart. `delivered` and `failed` are final; "Pending" and "Sent" are not. A row that never
+for the telco's verdict a minute after the send, then re-checks up to twice more, ten minutes
+apart, so three checks in all. `delivered` and `failed` are final; "Pending" and "Sent" are not. A row that never
 settles keeps its `sent` status and its raw provider status, which is the honest description
 of what we know.
 
@@ -1863,16 +1863,19 @@ loop.
 
 | Endpoint | Limit |
 |---|---|
-| `POST /auth/login` | 10 per 3 minutes, per email address |
-| `POST /auth/register` | 5 per hour, per email address |
+| `POST /auth/login` | 10 per 3 minutes, per email address and IP |
+| `POST /auth/register` | 5 per hour, per email address and IP |
 | `POST /auth/refresh` | 30 per minute, per refresh token |
 | `POST /auth/password_resets` | 5 per hour, per email address |
 | `PUT /auth/password_resets/:code` | 10 per 15 minutes, per email address |
+| `POST /chat/messages` | 20 per minute, per signed-in user |
 | Everything else | 300 per minute, per signed-in user |
 
-These are keyed by identity rather than by IP address on purpose: a large share of
-Ghanaian mobile traffic leaves through a small number of carrier addresses, and an
-IP-keyed limit would have users locking each other out.
+The authenticated limits key on the signed-in user rather than the IP address on
+purpose: a large share of Ghanaian mobile traffic leaves through a small number of
+carrier addresses, and an IP-keyed limit would have users locking each other out. The
+unauthenticated auth endpoints add a wider per-IP ceiling behind the per-identity limit
+above, as a backstop against a single address hammering them.
 
 ### 22.20 Errors, in one shape
 

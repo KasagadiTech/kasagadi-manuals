@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Kasagadi API
-  version: "1.4.0"
+  version: "1.4.1"
   description: |
     The JSON API behind Kasagadi. It serves two different audiences, with two
     different credentials.
@@ -1105,12 +1105,31 @@ paths:
                         allOf:
                           - $ref: "#/components/schemas/ChatMessage"
                         description: The assistant's answer, with whatever it cited.
+        "400":
+          description: |
+            Malformed JSON in the body. A body that parses but omits `message`
+            is a blank question, which is a 422 rather than a 400.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 400, message: "Malformed JSON in request body" } }
         "401":
           $ref: "#/components/responses/InvalidAccessToken"
         "403":
           $ref: "#/components/responses/NoMobileAccess"
         "422":
-          $ref: "#/components/responses/ValidationFailed"
+          description: |
+            The question was blank (or whitespace only) or over 4000 characters.
+            `details` is keyed by field, like every other write failure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error:
+                  status: 422
+                  message: Validation failed
+                  details:
+                    message: ["Type a message."]
         "429":
           description: |
             More than twenty questions in a minute. Each one is an upstream
@@ -2103,8 +2122,8 @@ paths:
             is written verbatim into the server's request log and every proxy access
             log, and cannot be redacted. When `reset_code` is present in the body it
             takes precedence and this segment is ignored, so send any placeholder.
-          schema: { type: string, pattern: "^[0-9]{6}$" }
-          example: "482913"
+          schema: { type: string }
+          example: unused
       requestBody:
         required: true
         content:
@@ -2149,7 +2168,20 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { error: { status: 401, message: "That reset code is invalid or has expired." } }
         "422":
-          $ref: "#/components/responses/ValidationFailed"
+          description: |
+            The new password failed a rule: blank, too short, too long, or the
+            confirmation does not match. Checked before the account is looked up,
+            so this never reveals whether the address exists. `details` is keyed
+            by field.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error:
+                  status: 422
+                  message: Validation failed
+                  details:
+                    password: ["is too short (minimum is 8 characters)"]
         "429":
           $ref: "#/components/responses/RateLimited"
 
