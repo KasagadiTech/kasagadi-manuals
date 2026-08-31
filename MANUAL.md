@@ -160,8 +160,10 @@ fact checker, and the assigned / completed / published dates.
 
 ### 6.1 Member
 
-1. Signs up at `/registration/new` → a `User` + `Member` are created, signed in, landed on
-   `/members/dashboard`.
+1. Signs up at `/registration/new` → a `User` + `Member` are created **unverified**, and a
+   6-digit code is emailed. He enters it at `/email_verification`, which verifies the email,
+   signs him in, and lands him on `/members/dashboard`. See "Email verification" under
+   Authentication & authorization.
 2. `/members/claims/new`: fills title, content, source, **one or more optional source
    links**, topic, region, and zero or more evidence rows.
 3. **Submit** runs the `submit` event → `pending_assignment` (validated). **Save draft**
@@ -399,6 +401,33 @@ completed Claim #100", "Admin A transferred Claim #101 to Admin C".
 - **Password reset**: `User.generates_token_for(:password_reset)` mints a 15-minute signed
   token bound to the password salt, so changing the password invalidates outstanding tokens.
   The request always returns the same generic notice to avoid leaking account existence.
+
+### Email verification
+
+Member self-signup is gated on a verified email address. `EmailVerificationCode` mirrors the
+password-reset code: a **6-digit numeric** code, **bcrypt-stored** (looked up by user and
+verified, never queried by value), **15-minute** expiry, one **live code per user** (a unique
+index on `user_id`), and it dies after **five wrong attempts**. Lapsed codes are pruned on a
+daily schedule.
+
+- **Web**: `POST /registration` creates the member unverified, emails a code, and redirects
+  to `GET /email_verification` **without signing in** (notice: "We sent a 6-digit code to
+  ... Enter it to finish signing up."). `POST /email_verification` verifies: a wrong code
+  re-renders the page ("That code is invalid or has expired."), a correct one signs Kofi in
+  and lands him on the member dashboard ("Your email is verified. Welcome to Kasagadi!").
+  `POST /email_verification/resend` sends a fresh code. Throttled 10 verify / 15 min and
+  5 resend / hour per pending signup, with 100 / 15 min and 30 / hour per-IP backstops.
+- **Mobile**: `POST /api/v1/auth/register` returns `verification_required` with no token;
+  `POST /api/v1/auth/email_verification` resends; `PATCH /api/v1/auth/email_verification`
+  verifies and returns a session. See §22.3.
+- **Unverified sign-in is refused.** `SessionsController#create` will not sign in an
+  unverified account: the password is already proven, so it issues a fresh code and routes
+  the browser to `/email_verification` ("Please verify your email. We sent you a new code.").
+  Mobile login returns `403 "Please verify your email address."` instead.
+- **Only member self-signup is gated.** Invitation-accepted fact-checkers and admins, the
+  Dubawa import, and the seeds are all created already verified (`email_verified_at` set at
+  creation), and existing users were backfilled verified. So no fact-checker, admin, or
+  pre-existing account is ever asked to verify.
 
 ---
 
@@ -857,7 +886,9 @@ bin/dev              # boots web + tailwind watch + Solid Queue
 ```
 
 Sign in with the seeded accounts (`db/seeds.rb` seeds `admin@kasagandi.com` as the super
-admin in dev) or register a fresh member at `/registration/new`.
+admin in dev; seeded accounts are created already verified) or register a fresh member at
+`/registration/new`, which emails a 6-digit code to enter at `/email_verification` before
+the account can sign in.
 
 ---
 
@@ -1052,32 +1083,56 @@ POST /api/v1/auth/register
   "password_confirmation": "a-strong-password" }
 ```
 
-`201 Created`:
+`201 Created`, and note there is **no token**:
 
 ```json
-{ "data": {
-  "token_type": "Bearer",
-  "access_token": "…", "refresh_token": "…",
-  "expires_in": 1800, "refresh_expires_in": 2592000,
-  "user": { "id": 42, "name": "Kofi Mensah", "role": "member",
-            "profile": { "organization": null, "phone": null, "region": null, "bio": null },
-            "abilities": ["marketplace.browse", "chat.use", "claims.create",
-                          "claims.submit", "claims.track"] }
-} }
+{ "data": { "verification_required": true, "email_address": "kofi@example.com" } }
 ```
 
-**There is no email-verification step.** Registration signs Kofi in: the response already
-carries a usable pair, so go straight to the member home screen. Do not call `/auth/login`
+**Registration does not sign Kofi in.** The account is created unverified and a **6-digit
+code** is emailed to him. He cannot get a session until he spends that code. Show a
+"check your email" screen and take him to the code entry.
+
+Kofi types the code:
+
+```
+PATCH /api/v1/auth/email_verification
+{ "email_address": "kofi@example.com", "code": "482913" }
+```
+
+On success the `200` body is a full session, the **same envelope** `POST /auth/login`
+returns (`token_type`, `access_token`, `refresh_token`, `expires_in`, `refresh_expires_in`,
+and `user`). Store the pair and go straight to the member home. Do not call `/auth/login`
 afterwards.
 
-**Only members self-register.** Fact-checkers arrive by invitation (§22.11), so the app
-needs no "sign up as a fact-checker" path.
+The code **expires in 15 minutes**, works **once**, and dies after **five wrong attempts**.
+A wrong, expired, unknown, or already-verified attempt all come back as one `401`, one
+message, so the failure reveals nothing:
+
+```json
+{ "error": { "status": 401, "message": "That verification code is invalid or has expired." } }
+```
+
+**Resend** if the code lapsed or never arrived:
+
+```
+POST /api/v1/auth/email_verification
+{ "email_address": "kofi@example.com" }
+```
+
+That always returns `202 { "data": { "status": "sent" } }`, whether or not the address has
+an unverified account, so it cannot be used to discover who has one. Each new code replaces
+the last, so only the newest works.
+
+**Only members self-register.** Fact-checkers arrive by invitation (§22.11), and invited
+fact-checkers and admins are created **already verified**, so they never see this step. The
+app needs no "sign up as a fact-checker" path.
 
 **Password rules,** worth enforcing in the form so Kofi finds out before the round trip:
 at least 8 characters, at most 72 bytes, and `password_confirmation` is **required**:
 omitting it is rejected rather than skipping the check.
 
-**When it fails,** the body names the field:
+**When registration fails,** the body names the field:
 
 ```json
 { "error": { "status": 422, "message": "Validation failed",
@@ -1085,7 +1140,10 @@ omitting it is rejected rather than skipping the check.
 ```
 
 Map `details` onto the form fields. Every key is an attribute name and every value is a
-list of messages, so the shape is stable enough to render generically.
+list of messages, so the shape is stable enough to render generically. One case is not an
+error: re-registering an email that is still **unverified** resends the code and lets the
+latest name and password win, rather than returning "has already been taken". That reply
+only comes back for an email that is already verified.
 
 ### 22.4 Ama signs in, and the app works out where to send her
 
@@ -1115,6 +1173,7 @@ control, and forging the list gains nothing.
 | Status | Meaning | What the app should show |
 |---|---|---|
 | `401` | Wrong email or password | "Try another email address or password." Stay on the form. |
+| `403` "Please verify your email address." | Correct password, email not yet verified | Send her to the verification screen. Offer resend (`POST /auth/email_verification`) and complete it with `PATCH /auth/email_verification` (§22.3). |
 | `403` "…suspended…" | Correct password, account suspended | A dead end. Show the message; offer support contact, not a retry. |
 | `403` "Administrators sign in on the web portal." | Correct password, admin account | Point at the website. Do not offer a member screen. |
 

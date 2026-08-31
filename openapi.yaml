@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Kasagadi API
-  version: "1.4.1"
+  version: "1.5.0"
   description: |
     The JSON API behind Kasagadi. It serves two different audiences, with two
     different credentials.
@@ -1866,10 +1866,19 @@ paths:
       tags: [Authentication]
       summary: Register a new member
       description: |
-        Creates the account and its member record together, then signs it in.
-        There is no email verification step: the response already carries a
-        usable token pair. Fact-checker accounts are not self-registered; they
-        arrive by invitation.
+        Creates the account and its member record together, unverified, and
+        emails a 6-digit code. Registration hands back **no token**: the account
+        cannot sign in until the code is spent at `PATCH /auth/email_verification`,
+        which returns the session. Fact-checker accounts are not self-registered;
+        they arrive by invitation and are created already verified, so they never
+        see this step.
+
+        Re-registering a still-unverified email resends the code and lets the
+        latest submission win: the name and password from this request replace
+        what was there, rather than colliding on the unique index. A verified
+        email gives the ordinary "has already been taken". This is safe because
+        the account holds nothing yet and the code only ever reaches the real
+        owner.
 
         Rate limited to 5 per hour per email address and IP together, with a
         looser 60 per hour per IP behind it. Keyed this way because much of Ghana
@@ -1899,14 +1908,23 @@ paths:
                   description: "Required. Omitting it is rejected rather than skipping the check."
       responses:
         "201":
-          description: Account created and signed in.
+          description: |
+            Account created, unverified. A code is on its way by email. No token
+            is returned: verify the code to obtain a session.
           content:
             application/json:
               schema:
                 type: object
                 required: [data]
                 properties:
-                  data: { $ref: "#/components/schemas/SessionWithUser" }
+                  data:
+                    type: object
+                    required: [verification_required, email_address]
+                    properties:
+                      verification_required: { type: boolean, example: true }
+                      email_address: { type: string, format: email, example: "kofi@example.com" }
+              example:
+                data: { verification_required: true, email_address: "kofi@example.com" }
         "400":
           $ref: "#/components/responses/MalformedJson"
         "422":
@@ -1956,12 +1974,18 @@ paths:
               example: { error: { status: 401, message: "Try another email address or password." } }
         "403":
           description: |
-            The credentials were correct, but the account may not use the mobile
-            app: it is suspended, it is an administrator, or it holds no role.
+            The credentials were correct, but the account cannot sign in as it
+            stands: its email is unverified, it is suspended, it is an
+            administrator, or it holds no role. An unverified account should be
+            sent to the verification screen, where the app can resend the code
+            (`POST /auth/email_verification`) and complete it
+            (`PATCH /auth/email_verification`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               examples:
+                unverified:
+                  value: { error: { status: 403, message: "Please verify your email address." } }
                 suspended:
                   value: { error: { status: 403, message: "Your account has been suspended. Contact an administrator." } }
                 administrator:
@@ -2182,6 +2206,112 @@ paths:
                   message: Validation failed
                   details:
                     password: ["is too short (minimum is 8 characters)"]
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/email_verification:
+    post:
+      tags: [Authentication]
+      summary: Resend an email verification code
+      description: |
+        Emails a fresh 6-digit code to an account that registered but has not yet
+        verified. Use it when the first code from `POST /auth/register` expired or
+        never arrived.
+
+        A code is issued only for an account that exists, is unverified, and is
+        active, but the response is identical either way, so this cannot be used
+        to discover which addresses have accounts or which are still unverified.
+        Issuing a new code replaces any outstanding one, so only the latest code
+        works.
+
+        Rate limited to 5 per hour per email address, plus 30 per hour per IP so
+        one host cannot walk a list of addresses.
+      operationId: resendEmailVerification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address]
+              properties:
+                email_address: { type: string, format: email, example: "kofi@example.com" }
+      responses:
+        "202":
+          description: Accepted. The same response whether or not a code was actually sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, example: "sent" }
+              example:
+                data: { status: "sent" }
+        "400":
+          $ref: "#/components/responses/MalformedJson"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    patch:
+      tags: [Authentication]
+      summary: Verify an email address and sign in
+      description: |
+        Spends the 6-digit code and marks the email verified. On success it hands
+        back a session, the same payload `POST /auth/login` returns: the password
+        was set at registration and the email is now proven, which is exactly what
+        login establishes. There is no separate sign-in call afterwards.
+
+        One `401`, with one message, covers an unknown address, an already-verified
+        account, a wrong code and an expired code, so the failure reveals nothing.
+        A missing or blank `email_address` or `code` falls under the same `401`.
+
+        The code expires in 15 minutes, works once, and dies after five wrong
+        attempts. Issuing a new code (by re-registering or resending) replaces the
+        previous one.
+
+        Rate limited to 10 per 15 minutes per email address, with a 100 per 15
+        minutes per-IP backstop.
+      operationId: verifyEmail
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address, code]
+              properties:
+                email_address: { type: string, format: email, example: "kofi@example.com" }
+                code:
+                  type: string
+                  pattern: "^[0-9]{6}$"
+                  description: "The 6-digit code from the email."
+                  example: "482913"
+      responses:
+        "200":
+          description: Verified and signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/SessionWithUser" }
+        "400":
+          $ref: "#/components/responses/MalformedJson"
+        "401":
+          description: |
+            Unknown address, already verified, wrong code, expired code, five
+            attempts spent, or a blank field. Deliberately one message for all.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 401, message: "That verification code is invalid or has expired." } }
+        "403":
+          $ref: "#/components/responses/NoMobileAccess"
         "429":
           $ref: "#/components/responses/RateLimited"
 

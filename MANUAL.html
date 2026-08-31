@@ -636,8 +636,9 @@ metadata. See §9.</li>
 <h3>6.1 Member</h3>
 
 <ol>
-<li>Signs up at <code>/registration/new</code> → a <code>User</code> + <code>Member</code> are created, signed in, landed on
-<code>/members/dashboard</code>.</li>
+<li>Signs up at <code>/registration/new</code> → a <code>User</code> + <code>Member</code> are created <strong>unverified</strong>, and a
+6-digit code is emailed. He enters it at <code>/email_verification</code>, which verifies the email,
+signs him in, and lands him on <code>/members/dashboard</code>. See &quot;Email verification&quot; under §10.</li>
 <li><code>/members/claims/new</code>: fills title, content, source, <strong>one or more optional source links</strong>, topic, region, and zero or more
 evidence rows.</li>
 <li><strong>Submit</strong> runs the <code>submit</code> event → <code>pending_assignment</code> (validated). <strong>Save draft</strong>
@@ -967,6 +968,35 @@ one.</li>
 <li><strong>Password reset</strong>: <code>User.generates_token_for(:password_reset)</code> mints a 15-minute signed
 token bound to the password salt, so changing the password invalidates outstanding tokens.
 The request always returns the same generic notice to avoid leaking account existence.</li>
+</ul>
+
+<h3>Email verification</h3>
+
+<p>Member self-signup is gated on a verified email address. <code>EmailVerificationCode</code> mirrors the
+password-reset code: a <strong>6-digit numeric</strong> code, <strong>bcrypt-stored</strong> (looked up by user and
+verified, never queried by value), <strong>15-minute</strong> expiry, one <strong>live code per user</strong> (a unique
+index on <code>user_id</code>), and it dies after <strong>five wrong attempts</strong>. Lapsed codes are pruned on a
+daily schedule.</p>
+
+<ul>
+<li><strong>Web</strong>: <code>POST /registration</code> creates the member unverified, emails a code, and redirects
+to <code>GET /email_verification</code> <strong>without signing in</strong> (notice: &quot;We sent a 6-digit code to
+... Enter it to finish signing up.&quot;). <code>POST /email_verification</code> verifies: a wrong code
+re-renders the page (&quot;That code is invalid or has expired.&quot;), a correct one signs Kofi in
+and lands him on the member dashboard (&quot;Your email is verified. Welcome to Kasagadi!&quot;).
+<code>POST /email_verification/resend</code> sends a fresh code. Throttled 10 verify / 15 min and
+5 resend / hour per pending signup, with 100 / 15 min and 30 / hour per-IP backstops.</li>
+<li><strong>Mobile</strong>: <code>POST /api/v1/auth/register</code> returns <code>verification_required</code> with no token;
+<code>POST /api/v1/auth/email_verification</code> resends; <code>PATCH /api/v1/auth/email_verification</code>
+verifies and returns a session. See §22.3.</li>
+<li><strong>Unverified sign-in is refused.</strong> <code>SessionsController#create</code> will not sign in an
+unverified account: the password is already proven, so it issues a fresh code and routes
+the browser to <code>/email_verification</code> (&quot;Please verify your email. We sent you a new code.&quot;).
+Mobile login returns <code>403 &quot;Please verify your email address.&quot;</code> instead.</li>
+<li><strong>Only member self-signup is gated.</strong> Invitation-accepted fact-checkers and admins, the
+Dubawa import, and the seeds are all created already verified (<code>email_verified_at</code> set at
+creation), and existing users were backfilled verified. So no fact-checker, admin, or
+pre-existing account is ever asked to verify.</li>
 </ul>
       </section>
 
@@ -1575,7 +1605,9 @@ bin/dev              # boots web + tailwind watch + Solid Queue
 </code></pre>
 
 <p>Sign in with the seeded accounts (<code>db/seeds.rb</code> seeds <code>admin@kasagandi.com</code> as the super
-admin in dev) or register a fresh member at <code>/registration/new</code>.</p>
+admin in dev; seeded accounts are created already verified) or register a fresh member at
+<code>/registration/new</code>, which emails a 6-digit code to enter at <code>/email_verification</code> before
+the account can sign in.</p>
       </section>
 
       <hr class="divider">
@@ -1787,29 +1819,42 @@ type does not require an app release. Compare the running build against
   "email_address": "kofi@example.com",
   "password": "a-strong-password",
   "password_confirmation": "a-strong-password" }</code></pre>
-<p><code>201 Created</code>:</p>
-<pre><code class="language-json">{ "data": {
-  "token_type": "Bearer",
-  "access_token": "…", "refresh_token": "…",
-  "expires_in": 1800, "refresh_expires_in": 2592000,
-  "user": { "id": 42, "name": "Kofi Mensah", "role": "member",
-            "profile": { "organization": null, "phone": null, "region": null, "bio": null },
-            "abilities": ["marketplace.browse", "chat.use", "claims.create",
-                          "claims.submit", "claims.track"] }
-} }</code></pre>
-<p><strong>There is no email-verification step.</strong> Registration signs Kofi in: the response already
-carries a usable pair, so go straight to the member home screen. Do not call <code>/auth/login</code>
+<p><code>201 Created</code>, and note there is <strong>no token</strong>:</p>
+<pre><code class="language-json">{ "data": { "verification_required": true, "email_address": "kofi@example.com" } }</code></pre>
+<p><strong>Registration does not sign Kofi in.</strong> The account is created unverified and a <strong>6-digit
+code</strong> is emailed to him. He cannot get a session until he spends that code. Show a
+"check your email" screen and take him to the code entry.</p>
+<p>Kofi types the code:</p>
+<pre><code>PATCH /api/v1/auth/email_verification
+{ "email_address": "kofi@example.com", "code": "482913" }</code></pre>
+<p>On success the <code>200</code> body is a full session, the <strong>same envelope</strong> <code>POST /auth/login</code>
+returns (<code>token_type</code>, <code>access_token</code>, <code>refresh_token</code>, <code>expires_in</code>, <code>refresh_expires_in</code>,
+and <code>user</code>). Store the pair and go straight to the member home. Do not call <code>/auth/login</code>
 afterwards.</p>
-<p><strong>Only members self-register.</strong> Fact-checkers arrive by invitation (§22.11), so the app
-needs no "sign up as a fact-checker" path.</p>
+<p>The code <strong>expires in 15 minutes</strong>, works <strong>once</strong>, and dies after <strong>five wrong attempts</strong>.
+A wrong, expired, unknown, or already-verified attempt all come back as one <code>401</code>, one
+message, so the failure reveals nothing:</p>
+<pre><code class="language-json">{ "error": { "status": 401, "message": "That verification code is invalid or has expired." } }</code></pre>
+<p><strong>Resend</strong> if the code lapsed or never arrived:</p>
+<pre><code>POST /api/v1/auth/email_verification
+{ "email_address": "kofi@example.com" }</code></pre>
+<p>That always returns <code>202 { "data": { "status": "sent" } }</code>, whether or not the address has
+an unverified account, so it cannot be used to discover who has one. Each new code replaces
+the last, so only the newest works.</p>
+<p><strong>Only members self-register.</strong> Fact-checkers arrive by invitation (§22.11), and invited
+fact-checkers and admins are created <strong>already verified</strong>, so they never see this step. The
+app needs no "sign up as a fact-checker" path.</p>
 <p><strong>Password rules,</strong> worth enforcing in the form so Kofi finds out before the round trip:
 at least 8 characters, at most 72 bytes, and <code>password_confirmation</code> is <strong>required</strong>:
 omitting it is rejected rather than skipping the check.</p>
-<p><strong>When it fails,</strong> the body names the field:</p>
+<p><strong>When registration fails,</strong> the body names the field:</p>
 <pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
              "details": { "email_address": ["has already been taken"] } } }</code></pre>
 <p>Map <code>details</code> onto the form fields. Every key is an attribute name and every value is a
-list of messages, so the shape is stable enough to render generically.</p>
+list of messages, so the shape is stable enough to render generically. One case is not an
+error: re-registering an email that is still <strong>unverified</strong> resends the code and lets the
+latest name and password win, rather than returning "has already been taken". That reply
+only comes back for an email that is already verified.</p>
 <h3 id="22-4-ama-signs-in-and-the-app-works-out-where-to-send-her">22.4 Ama signs in, and the app works out where to send her</h3>
 <p><em>Ama already has an account. She may be a member or a fact-checker; the app does not know
 which until the server says so.</em></p>
@@ -1837,7 +1882,7 @@ decision:</p>
 tabs and buttons to render; it is <strong>not</strong> an authorization mechanism. The server enforces
 every rule independently, so hiding a button is a courtesy to the user, not a security
 control, and forging the list gains nothing.</p>
-<p><strong>Three ways this fails, and they mean different things:</strong></p>
+<p><strong>Four ways this fails, and they mean different things:</strong></p>
 <table>
 <thead><tr>
 <th>Status</th>
@@ -1851,6 +1896,11 @@ control, and forging the list gains nothing.</p>
 <td>"Try another email address or password." Stay on the form.</td>
 </tr>
 <tr>
+<td><code>403</code> "Please verify your email address."</td>
+<td>Correct password, email not yet verified</td>
+<td>Send her to the verification screen. Offer resend (<code>POST /auth/email_verification</code>) and complete it with <code>PATCH /auth/email_verification</code> (§22.3).</td>
+</tr>
+<tr>
 <td><code>403</code> "…suspended…"</td>
 <td>Correct password, account suspended</td>
 <td>A dead end. Show the message; offer support contact, not a retry.</td>
@@ -1862,7 +1912,7 @@ control, and forging the list gains nothing.</p>
 </tr>
 </tbody>
 </table>
-<p>Note that the password must already be correct before either <code>403</code> appears, so these
+<p>Note that the password must already be correct before any <code>403</code> appears, so these
 cannot be used to discover whether an address has an account.</p>
 <h3 id="22-5-ama-comes-back-the-next-morning">22.5 Ama comes back the next morning</h3>
 <p><em>Ama used the app at 9am and opens it again at 2pm. Her access token expired hours ago.</em></p>
