@@ -1958,7 +1958,47 @@ is written for a person and can be shown as-is.
 | `429` | Rate limited | Back off, show a plain message. |
 | `5xx` | Server fault | Retry with backoff; show a generic failure. |
 
-### 22.21 Checklist before the first build ships
+### 22.21 Kofi updates his profile, then deletes his account
+
+*Kofi wants to fix his organisation, and later decides to leave.*
+
+**Editing his profile** is a `PATCH`, and only the keys sent are written, so the app can save
+one field without resending the rest:
+
+```
+PATCH /api/v1/me/profile
+{ "profile": { "organization": "Citi FM", "region": "Greater Accra" } }
+```
+
+`200` with the whole `/me` payload back, so the app refreshes from the one response. Only the
+member fields are writable here (`organization`, `phone`, `region`, `bio`). His name, email and
+avatar are managed elsewhere, and nothing he sends outside `profile` can touch them.
+
+**Leaving** takes two steps, so a tap cannot delete an account on its own. First he asks for a
+code:
+
+```
+POST /api/v1/me/deletion
+```
+
+`202`, and a 6-digit code is emailed to him. Then he confirms with the code:
+
+```
+DELETE /api/v1/me
+{ "code": "482913" }
+```
+
+`204 No Content`. The account is soft-deleted: his claims stay part of the record, but every
+session is revoked, so he is signed out of every device at once and the old token stops working
+immediately. A wrong, expired or missing code is a `422` and changes nothing:
+
+```json
+{ "error": { "status": 422, "message": "That confirmation code is invalid or has expired." } }
+```
+
+Both calls are members only; a fact-checker is refused with `403`.
+
+### 22.22 Checklist before the first build ships
 
 - [ ] Tokens are in the device keychain, never in plain preferences, and never logged.
 - [ ] A single-flight refresh interceptor handles `401` and replays the request once.
@@ -1996,3 +2036,7 @@ is written for a person and can be shown as-is.
 - [ ] `422` `details` are rendered per field, and `details.base` as a form-level message.
 - [ ] Sign-out clears local credentials even when the request fails.
 - [ ] Nothing in the app contains a `kg_live_…` partner key.
+- [ ] Profile edits send only fields nested under `profile`, and the `/me` response is used
+      to redraw.
+- [ ] Account deletion is two steps (`POST /me/deletion`, then `DELETE /me` with the code),
+      and a `422` is treated as a wrong or expired code.

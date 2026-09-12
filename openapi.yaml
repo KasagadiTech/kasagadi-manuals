@@ -418,6 +418,153 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+    delete:
+      tags: [Account]
+      summary: Delete your account
+      description: |
+        Soft-deletes the signed-in member's account after an emailed
+        confirmation code. Request the code first with `POST /me/deletion`,
+        then send it here.
+
+        The account is marked deleted rather than erased, so the member's
+        claims and evidence stay part of the fact-checking record. Every
+        session and outstanding code is revoked, so the account is logged out
+        of every device at once and the old token stops working immediately.
+
+        The code expires in 15 minutes, works once, and dies after five wrong
+        attempts. A wrong, expired or missing code is a `422` and changes
+        nothing.
+
+        Members only. A fact-checker is refused with `403`.
+      operationId: deleteAccount
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  pattern: "^[0-9]{6}$"
+                  description: "The 6-digit code from the deletion email."
+                  example: "482913"
+      responses:
+        "204":
+          description: Deleted. No body.
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "422":
+          description: The confirmation code was wrong, expired, or missing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 422, message: "That confirmation code is invalid or has expired." } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/profile:
+    patch:
+      tags: [Account]
+      summary: Update your profile
+      description: |
+        Edits the signed-in member's own profile fields. Only the member
+        fields are writable here: name, email and avatar are managed
+        elsewhere, so a profile edit can never change the account's identity
+        or sign-in address.
+
+        Only the keys sent are written. The response is the same payload as
+        `GET /me`, so the app can refresh its whole picture of the account
+        from one call.
+
+        Members only. A fact-checker is refused with `403`.
+      operationId: updateMemberProfile
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                profile:
+                  type: object
+                  properties:
+                    organization: { type: string, nullable: true, example: "Citi FM" }
+                    phone: { type: string, nullable: true, example: "0241234567" }
+                    region: { type: string, nullable: true, example: "Greater Accra" }
+                    bio: { type: string, nullable: true, example: "Community reporter in Accra." }
+      responses:
+        "200":
+          description: The updated profile, in the full `/me` payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "400":
+          description: The `profile` key was missing, or the body was not valid JSON.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                missingParameter:
+                  value: { error: { status: 400, message: "Missing parameter: profile" } }
+                malformedJson:
+                  value: { error: { status: 400, message: "Malformed JSON in request body" } }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/deletion:
+    post:
+      tags: [Account]
+      summary: Request an account deletion code
+      description: |
+        Emails a 6-digit confirmation code to the signed-in member, then
+        confirm the deletion with `DELETE /me`. Issuing a new code replaces
+        any outstanding one, so only the latest works. The code expires in 15
+        minutes.
+
+        Rate limited to 5 per hour per account.
+
+        Members only. A fact-checker is refused with `403`.
+      operationId: requestAccountDeletion
+      security:
+        - mobileAccessToken: []
+      responses:
+        "202":
+          description: Accepted. A code has been emailed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, example: "sent" }
+              example:
+                data: { status: "sent" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          $ref: "#/components/responses/MembersOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /me/dashboard:
     get:
       tags: [Member]
