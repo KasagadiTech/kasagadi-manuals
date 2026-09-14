@@ -1799,6 +1799,13 @@ preferences, and never write either into a log.</p>
                   "formats_label": "JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG" },
     "avatar":   { "max_bytes": 5242880, "content_types": ["image/png", "image/jpeg", "image/webp"] }
   },
+  "password_policy": {
+    "min_length": 8, "max_bytes": 72,
+    "require_uppercase": true, "require_lowercase": true,
+    "require_number": true, "require_special": true,
+    "special_pattern": "[^A-Za-z0-9\\s]",
+    "description": "At least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character."
+  },
   "claim_statuses": ["draft", "pending_assignment", "in_progress", "published", "unpublished"],
   "verdicts": ["verdict_true", "verdict_false", "misleading", "partly_true", "unverifiable"],
   "assignment_statuses": ["pending", "in_progress", "completed", "rejected"],
@@ -1809,7 +1816,9 @@ file picker from <code>uploads.evidence</code> rather than hard-coding "10MB". S
 change, and a hard-coded copy will drift and reject files the server would accept, or
 accept files it rejects. Render verdict and status labels from these lists so a new verdict
 type does not require an app release. Compare the running build against
-<code>min_supported_app_version</code> and prompt an upgrade when it is older.</p>
+<code>min_supported_app_version</code> and prompt an upgrade when it is older. Drive the password
+form from <code>password_policy</code> (§22.3) so the app and the server enforce exactly the same
+rule, rather than hard-coding it and drifting.</p>
 <p><strong>Do not</strong> ship a fallback copy of these values that silently replaces a failed call. If
 <code>/config</code> is unreachable, say so and retry: guessing the limits is how the two drift apart.</p>
 <h3 id="22-3-kofi-creates-a-member-account">22.3 Kofi creates a member account</h3>
@@ -1817,8 +1826,8 @@ type does not require an app release. Compare the running build against
 <pre><code>POST /api/v1/auth/register</code></pre>
 <pre><code class="language-json">{ "name": "Kofi Mensah",
   "email_address": "kofi@example.com",
-  "password": "a-strong-password",
-  "password_confirmation": "a-strong-password" }</code></pre>
+  "password": "Str0ng!pass",
+  "password_confirmation": "Str0ng!pass" }</code></pre>
 <p><code>201 Created</code>, and note there is <strong>no token</strong>:</p>
 <pre><code class="language-json">{ "data": { "verification_required": true, "email_address": "kofi@example.com" } }</code></pre>
 <p><strong>Registration does not sign Kofi in.</strong> The account is created unverified and a <strong>6-digit
@@ -1845,8 +1854,13 @@ the last, so only the newest works.</p>
 fact-checkers and admins are created <strong>already verified</strong>, so they never see this step. The
 app needs no "sign up as a fact-checker" path.</p>
 <p><strong>Password rules,</strong> worth enforcing in the form so Kofi finds out before the round trip:
-at least 8 characters, at most 72 bytes, and <code>password_confirmation</code> is <strong>required</strong>:
-omitting it is rejected rather than skipping the check.</p>
+at least 8 characters, at most 72 bytes, and one uppercase letter, one lowercase letter,
+one number and one special character. <code>password_confirmation</code> is <strong>required</strong>: omitting it
+is rejected rather than skipping the check. The web enforces the identical rule, so an
+account works the same on both platforms. Read the exact rule from <code>password_policy</code> on
+<code>/config</code> (§22.2) rather than hard-coding it, so a future change reaches the app without a
+release. The same rule applies wherever a password is set: registration, password reset
+(§22.6) and invitation acceptance.</p>
 <p><strong>When registration fails,</strong> the body names the field:</p>
 <pre><code class="language-json">{ "error": { "status": 422, "message": "Validation failed",
              "details": { "email_address": ["has already been taken"] } } }</code></pre>
@@ -1955,8 +1969,8 @@ the address was found.</p>
 <pre><code>PUT /api/v1/auth/password_resets/000000
 { "reset_code": "482913",
   "email_address": "ama@example.com",
-  "password": "her-new-password",
-  "password_confirmation": "her-new-password" }</code></pre>
+  "password": "Str0ng!pass",
+  "password_confirmation": "Str0ng!pass" }</code></pre>
 <p><strong>Send the code as <code>reset_code</code> in the body.</strong> The URL segment still works and is still the
 published shape, but a code in a path is written verbatim into server and proxy access
 logs where it cannot be redacted. When <code>reset_code</code> is present it wins, so put any
@@ -1968,7 +1982,7 @@ destroys every session on every device and the app returns Ama to the sign-in sc
 she was signed in on a tablet, that session is gone too.</p>
 <p>The code <strong>expires in 15 minutes</strong>, works <strong>once</strong>, and dies after <strong>five wrong attempts</strong>.</p>
 <p><strong>Two failure shapes to handle differently:</strong></p>
-<ul><li><code>422</code> means the password itself was rejected (too short, too long, confirmation mismatch). <strong>The code is not spent.</strong> Let her fix the password and submit again with the same code.</li><li><code>401</code> "That reset code is invalid or has expired." means the code was wrong, expired, already used, or five attempts burned. Send her back to step one for a fresh code.</li></ul>
+<ul><li><code>422</code> means the password itself was rejected (too short, too long, a missing character class, or a confirmation mismatch). <strong>The code is not spent.</strong> Let her fix the password and submit again with the same code.</li><li><code>401</code> "That reset code is invalid or has expired." means the code was wrong, expired, already used, or five attempts burned. Send her back to step one for a fresh code.</li></ul>
 <h3 id="22-7-kofi-signs-out">22.7 Kofi signs out</h3>
 <pre><code>DELETE /api/v1/auth/logout
 Authorization: Bearer &lt;access_token&gt;</code></pre>

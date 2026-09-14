@@ -2048,10 +2048,16 @@ paths:
                   format: password
                   minLength: 8
                   maxLength: 72
-                  description: "At least 8 characters. bcrypt caps the input at 72 bytes."
+                  example: "Str0ng!pass"
+                  description: >
+                    At least 8 characters and at most 72 bytes (bcrypt caps the
+                    input there), with one uppercase letter, one lowercase
+                    letter, one number and one special character. See
+                    password_policy on GET /config; the web enforces the same rule.
                 password_confirmation:
                   type: string
                   format: password
+                  example: "Str0ng!pass"
                   description: "Required. Omitting it is rejected rather than skipping the check."
       responses:
         "201":
@@ -2315,7 +2321,12 @@ paths:
                   format: password
                   minLength: 8
                   maxLength: 72
-                password_confirmation: { type: string, format: password }
+                  example: "Str0ng!pass"
+                  description: >
+                    Must satisfy password_policy on GET /config: at least 8
+                    characters, at most 72 bytes, and one uppercase letter, one
+                    lowercase letter, one number and one special character.
+                password_confirmation: { type: string, format: password, example: "Str0ng!pass" }
       responses:
         "200":
           description: Password reset. All sessions destroyed.
@@ -2340,10 +2351,10 @@ paths:
               example: { error: { status: 401, message: "That reset code is invalid or has expired." } }
         "422":
           description: |
-            The new password failed a rule: blank, too short, too long, or the
-            confirmation does not match. Checked before the account is looked up,
-            so this never reveals whether the address exists. `details` is keyed
-            by field.
+            The new password failed a rule: blank, too short, too long, a missing
+            character class, or the confirmation does not match. Checked before the
+            account is looked up, so this never reveals whether the address exists.
+            `details` is keyed by field.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2762,6 +2773,31 @@ components:
                   type: array
                   items: { type: string }
                   example: ["image/png", "image/jpeg", "image/webp"]
+        password_policy:
+          type: object
+          description: >
+            The rule every password must satisfy, enforced identically on the
+            web and the mobile API. Drive the password form from this rather
+            than hard-coding it, so a future change reaches the app without a
+            release. Checked only when a password is set, so existing accounts
+            keep working until their next password change.
+          properties:
+            min_length: { type: integer, example: 8 }
+            max_bytes:
+              type: integer
+              example: 72
+              description: "bcrypt ignores anything past 72 bytes, so this is the true ceiling."
+            require_uppercase: { type: boolean, example: true }
+            require_lowercase: { type: boolean, example: true }
+            require_number: { type: boolean, example: true }
+            require_special: { type: boolean, example: true }
+            special_pattern:
+              type: string
+              example: "[^A-Za-z0-9\\s]"
+              description: "Any printable character that is not a letter, digit or whitespace."
+            description:
+              type: string
+              example: "At least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character."
         claim_statuses:
           type: array
           items: { type: string }
@@ -2780,7 +2816,7 @@ components:
             privacy_policy: { type: string, format: uri }
             terms: { type: string, format: uri }
             cookies: { type: string, format: uri }
-      required: [api_version, min_supported_app_version, uploads, claim_statuses, verdicts, assignment_statuses, links]
+      required: [api_version, min_supported_app_version, uploads, password_policy, claim_statuses, verdicts, assignment_statuses, links]
 
     MarketplaceFacets:
       type: object

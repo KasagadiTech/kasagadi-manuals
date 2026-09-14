@@ -1051,6 +1051,13 @@ GET /api/v1/config
                   "formats_label": "JPG, PNG, WebP, GIF, PDF, DOC, DOCX, MP3, M4A, WAV or OGG" },
     "avatar":   { "max_bytes": 5242880, "content_types": ["image/png", "image/jpeg", "image/webp"] }
   },
+  "password_policy": {
+    "min_length": 8, "max_bytes": 72,
+    "require_uppercase": true, "require_lowercase": true,
+    "require_number": true, "require_special": true,
+    "special_pattern": "[^A-Za-z0-9\\s]",
+    "description": "At least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character."
+  },
   "claim_statuses": ["draft", "pending_assignment", "in_progress", "published", "unpublished"],
   "verdicts": ["verdict_true", "verdict_false", "misleading", "partly_true", "unverifiable"],
   "assignment_statuses": ["pending", "in_progress", "completed", "rejected"],
@@ -1063,7 +1070,9 @@ file picker from `uploads.evidence` rather than hard-coding "10MB". Server limit
 change, and a hard-coded copy will drift and reject files the server would accept, or
 accept files it rejects. Render verdict and status labels from these lists so a new verdict
 type does not require an app release. Compare the running build against
-`min_supported_app_version` and prompt an upgrade when it is older.
+`min_supported_app_version` and prompt an upgrade when it is older. Drive the password
+form from `password_policy` (§22.3) so the app and the server enforce exactly the same
+rule, rather than hard-coding it and drifting.
 
 **Do not** ship a fallback copy of these values that silently replaces a failed call. If
 `/config` is unreachable, say so and retry: guessing the limits is how the two drift apart.
@@ -1079,8 +1088,8 @@ POST /api/v1/auth/register
 ```json
 { "name": "Kofi Mensah",
   "email_address": "kofi@example.com",
-  "password": "a-strong-password",
-  "password_confirmation": "a-strong-password" }
+  "password": "Str0ng!pass",
+  "password_confirmation": "Str0ng!pass" }
 ```
 
 `201 Created`, and note there is **no token**:
@@ -1129,8 +1138,13 @@ fact-checkers and admins are created **already verified**, so they never see thi
 app needs no "sign up as a fact-checker" path.
 
 **Password rules,** worth enforcing in the form so Kofi finds out before the round trip:
-at least 8 characters, at most 72 bytes, and `password_confirmation` is **required**:
-omitting it is rejected rather than skipping the check.
+at least 8 characters, at most 72 bytes, and one uppercase letter, one lowercase letter,
+one number and one special character. `password_confirmation` is **required**: omitting it
+is rejected rather than skipping the check. The web enforces the identical rule, so an
+account works the same on both platforms. Read the exact rule from `password_policy` on
+`/config` (§22.2) rather than hard-coding it, so a future change reaches the app without a
+release. The same rule applies wherever a password is set: registration, password reset
+(§22.6) and invitation acceptance.
 
 **When registration fails,** the body names the field:
 
@@ -1251,8 +1265,8 @@ Step two, Ama types the code and her new password on one screen:
 PUT /api/v1/auth/password_resets/000000
 { "reset_code": "482913",
   "email_address": "ama@example.com",
-  "password": "her-new-password",
-  "password_confirmation": "her-new-password" }
+  "password": "Str0ng!pass",
+  "password_confirmation": "Str0ng!pass" }
 ```
 
 **Send the code as `reset_code` in the body.** The URL segment still works and is still the
@@ -1274,8 +1288,9 @@ The code **expires in 15 minutes**, works **once**, and dies after **five wrong 
 
 **Two failure shapes to handle differently:**
 
-- `422` means the password itself was rejected (too short, too long, confirmation mismatch).
-  **The code is not spent.** Let her fix the password and submit again with the same code.
+- `422` means the password itself was rejected (too short, too long, a missing character
+  class, or a confirmation mismatch). **The code is not spent.** Let her fix the password
+  and submit again with the same code.
 - `401` "That reset code is invalid or has expired." means the code was wrong, expired,
   already used, or five attempts burned. Send her back to step one for a fresh code.
 
