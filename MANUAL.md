@@ -1985,9 +1985,27 @@ PATCH /api/v1/me/profile
 { "profile": { "organization": "Citi FM", "region": "Greater Accra" } }
 ```
 
-`200` with the whole `/me` payload back, so the app refreshes from the one response. Only the
-member fields are writable here (`organization`, `phone`, `region`, `bio`). His name, email and
-avatar are managed elsewhere, and nothing he sends outside `profile` can touch them.
+`200` with the whole `/me` payload back, so the app refreshes from the one response. His name is
+edited the same way, as `name` inside `profile`. A member can write `name`, `organization`,
+`phone`, `region` and `bio`; a fact checker can write those plus `specialty`. Everything else is
+ignored, including a fact checker's `verified` and the email, which the app cannot change. The
+name and the role fields are saved together, so a `422` means nothing was written.
+
+**Changing his photo** is one `multipart/form-data` request with a single `avatar` file, and
+either role may send it:
+
+```
+PUT /api/v1/me/avatar
+Content-Type: multipart/form-data
+
+avatar=<photo.jpg>
+```
+
+`200` with the `/me` payload and a new `avatar_url`. The server judges the file on its bytes, not
+on the declared type, against the PNG, JPEG, WEBP and 5MB limits in `uploads.avatar` from
+`/config`, so the app should resize on the device before sending. A refused file is a `422` and
+the old photo stays. `DELETE /api/v1/me/avatar` removes it, and answers `200` even when there was
+nothing to remove.
 
 **Leaving** takes two steps, so a tap cannot delete an account on its own. First he asks for a
 code:
@@ -2010,6 +2028,9 @@ immediately. A wrong, expired or missing code is a `422` and changes nothing:
 ```json
 { "error": { "status": 422, "message": "That confirmation code is invalid or has expired." } }
 ```
+
+If he tries to sign in again afterwards, login answers `403` with
+`"This account has been deleted."`, not the suspension message.
 
 Both calls are members only; a fact-checker is refused with `403`.
 
@@ -2053,5 +2074,7 @@ Both calls are members only; a fact-checker is refused with `403`.
 - [ ] Nothing in the app contains a `kg_live_…` partner key.
 - [ ] Profile edits send only fields nested under `profile`, and the `/me` response is used
       to redraw.
+- [ ] Avatar uploads are a single `multipart/form-data` `PUT /me/avatar` with one `avatar`
+      part, resized on the device to fit `uploads.avatar` from `/config`.
 - [ ] Account deletion is two steps (`POST /me/deletion`, then `DELETE /me` with the code),
       and a `422` is treated as a wrong or expired code.

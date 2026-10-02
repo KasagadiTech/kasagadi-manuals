@@ -473,17 +473,27 @@ paths:
       tags: [Account]
       summary: Update your profile
       description: |
-        Edits the signed-in member's own profile fields. Only the member
-        fields are writable here: name, email and avatar are managed
-        elsewhere, so a profile edit can never change the account's identity
-        or sign-in address.
+        Edits the signed-in member's or fact checker's name and role profile
+        fields. Each role writes the same fields the web settings page offers
+        it:
 
-        Only the keys sent are written. The response is the same payload as
-        `GET /me`, so the app can refresh its whole picture of the account
-        from one call.
+        | Role | Writable keys |
+        |---|---|
+        | member | `name`, `organization`, `phone`, `region`, `bio` |
+        | fact_checker | `name`, `organization`, `specialty`, `phone`, `region`, `bio` |
 
-        Members only. A fact-checker is refused with `403`.
-      operationId: updateMemberProfile
+        Anything else is ignored, including `verified` and `email_address`.
+        The email cannot be changed from the app, and the avatar has its own
+        endpoint, `PUT /me/avatar`, because it is a file.
+
+        Only the keys sent are written. The name and the role fields are
+        validated together and saved together, so a refused field leaves
+        nothing half written, and every problem comes back in one `422`. A
+        fact checker's `organization` cannot be blank.
+
+        The response is the same payload as `GET /me`, so the app can refresh
+        its whole picture of the account from one call.
+      operationId: updateProfile
       security:
         - mobileAccessToken: []
       requestBody:
@@ -497,7 +507,13 @@ paths:
                 profile:
                   type: object
                   properties:
+                    name: { type: string, example: "Kofi Mensah" }
                     organization: { type: string, nullable: true, example: "Citi FM" }
+                    specialty:
+                      type: string
+                      nullable: true
+                      example: "Politics"
+                      description: Fact checkers only. Ignored for a member.
                     phone: { type: string, nullable: true, example: "0241234567" }
                     region: { type: string, nullable: true, example: "Greater Accra" }
                     bio: { type: string, nullable: true, example: "Community reporter in Accra." }
@@ -523,8 +539,112 @@ paths:
                   value: { error: { status: 400, message: "Malformed JSON in request body" } }
         "401":
           $ref: "#/components/responses/InvalidAccessToken"
-        "403":
-          $ref: "#/components/responses/MembersOnly"
+        "422":
+          description: A field was refused. Nothing was saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                blankName:
+                  value: { error: { status: 422, message: "Validation failed", details: { name: ["can't be blank"] } } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /me/avatar:
+    put:
+      tags: [Account]
+      summary: Upload or replace your avatar
+      description: |
+        One `multipart/form-data` request with a single `avatar` file. Either
+        role may call it. There is no signed-upload handshake: send the bytes,
+        get the account back.
+
+        ```
+        curl -X PUT https://kasagadi.ai/api/v1/me/avatar \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -F "avatar=@photo.jpg"
+        ```
+
+        The file is judged on what the server identifies it as from the bytes,
+        not on the content type the request declared. The allowed types (PNG,
+        JPEG, WEBP) and the 5MB ceiling are the `uploads.avatar` block of
+        `/config`; drive the picker from there, and resize on the device
+        before sending.
+
+        A refused upload changes nothing: the avatar already there stays. A
+        successful one replaces it. Every upload gets a new `avatar_url`, so
+        an image cache keyed on the URL picks up the change on its own.
+      operationId: updateAvatar
+      security:
+        - mobileAccessToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [avatar]
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+                  description: The image file.
+      responses:
+        "200":
+          description: The account, with the new `avatar_url`, in the full `/me` payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "400":
+          description: No `avatar` part was sent, or it was not a file.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                missingParameter:
+                  value: { error: { status: 400, message: "Missing parameter: avatar" } }
+                notAFile:
+                  value: { error: { status: 400, message: "avatar must be a file upload" } }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "422":
+          description: The file is not a supported image, or is too large.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                wrongType:
+                  value: { error: { status: 422, message: "Validation failed", details: { avatar: ["must be a PNG, JPG or WEBP image"] } } }
+                tooLarge:
+                  value: { error: { status: 422, message: "Validation failed", details: { avatar: ["must be smaller than 5MB"] } } }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Account]
+      summary: Remove your avatar
+      description: |
+        Removes the signed-in user's avatar. Either role may call it. Removing
+        an avatar that is not there still answers `200`, so a retry after a
+        dropped response is safe.
+      operationId: deleteAvatar
+      security:
+        - mobileAccessToken: []
+      responses:
+        "200":
+          description: The account, with `avatar_url` null, in the full `/me` payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -2128,8 +2248,9 @@ paths:
         "403":
           description: |
             The credentials were correct, but the account cannot sign in as it
-            stands: its email is unverified, it is suspended, it is an
-            administrator, or it holds no role. An unverified account should be
+            stands: its email is unverified, it is suspended, its owner deleted
+            it, it is an administrator, or it holds no role. A deleted account
+            is told so rather than told it is suspended, even if it is both. An unverified account should be
             sent to the verification screen, where the app can resend the code
             (`POST /auth/email_verification`) and complete it
             (`PATCH /auth/email_verification`).
@@ -2141,6 +2262,8 @@ paths:
                   value: { error: { status: 403, message: "Please verify your email address." } }
                 suspended:
                   value: { error: { status: 403, message: "Your account has been suspended. Contact an administrator." } }
+                deleted:
+                  value: { error: { status: 403, message: "This account has been deleted." } }
                 administrator:
                   value: { error: { status: 403, message: "Administrators sign in on the web portal." } }
                 noRole:
