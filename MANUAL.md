@@ -425,7 +425,7 @@ daily schedule.
   the browser to `/email_verification` ("Please verify your email. We sent you a new code.").
   Mobile login returns `403 "Please verify your email address."` instead.
 - **Only member self-signup is gated.** Invitation-accepted fact-checkers and admins, the
-  Dubawa import, and the seeds are all created already verified (`email_verified_at` set at
+  Dubawa and LetsDebunk imports, and the seeds are all created already verified (`email_verified_at` set at
   creation), and existing users were backfilled verified. So no fact-checker, admin, or
   pre-existing account is ever asked to verify.
 
@@ -581,14 +581,14 @@ What the table cannot show:
 
 ### 14.2 Imported claims notify nobody
 
-Dubawa imports carry an `external_source`, which is what `Claim#imported?` reads.
+Dubawa and LetsDebunk imports carry an `external_source`, which is what `Claim#imported?` reads.
 `ClaimNotifier#deliver` returns before anything is written for such a claim, on every
 channel, for every recipient.
 
 Two reasons. Nobody asked for the work, so nobody is waiting on the answer. And the member
 on an imported claim is a service account that never signs in, so anything addressed to it
 goes into a feed with no reader. Without the rule, a single import would put one "verdict
-awaiting approval" in front of every admin for every row, because Dubawa imports create a
+awaiting approval" in front of every admin for every row, because each import creates a
 verification per claim.
 
 The rule lives in the base class rather than at each call site, so a new notifier cannot

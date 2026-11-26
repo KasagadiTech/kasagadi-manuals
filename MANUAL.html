@@ -994,7 +994,7 @@ unverified account: the password is already proven, so it issues a fresh code an
 the browser to <code>/email_verification</code> (&quot;Please verify your email. We sent you a new code.&quot;).
 Mobile login returns <code>403 &quot;Please verify your email address.&quot;</code> instead.</li>
 <li><strong>Only member self-signup is gated.</strong> Invitation-accepted fact-checkers and admins, the
-Dubawa import, and the seeds are all created already verified (<code>email_verified_at</code> set at
+Dubawa and LetsDebunk imports, and the seeds are all created already verified (<code>email_verified_at</code> set at
 creation), and existing users were backfilled verified. So no fact-checker, admin, or
 pre-existing account is ever asked to verify.</li>
 </ul>
@@ -1245,13 +1245,13 @@ controller actions, so the claim is already saved: raising would show a 500 for 
 that actually worked, and would strand every recipient queued behind the one that failed.</li>
 </ul>
 <h3 id="14-2-imported-claims-notify-nobody">14.2 Imported claims notify nobody</h3>
-<p>Dubawa imports carry an <code>external_source</code>, which is what <code>Claim#imported?</code> reads.
+<p>Dubawa and LetsDebunk imports carry an <code>external_source</code>, which is what <code>Claim#imported?</code> reads.
 <code>ClaimNotifier#deliver</code> returns before anything is written for such a claim, on every
 channel, for every recipient.</p>
 <p>Two reasons. Nobody asked for the work, so nobody is waiting on the answer. And the member
 on an imported claim is a service account that never signs in, so anything addressed to it
 goes into a feed with no reader. Without the rule, a single import would put one "verdict
-awaiting approval" in front of every admin for every row, because Dubawa imports create a
+awaiting approval" in front of every admin for every row, because each import creates a
 verification per claim.</p>
 <p>The rule lives in the base class rather than at each call site, so a new notifier cannot
 forget it. <code>Assignment</code> checks <code>imported?</code> a second time before it builds the event, which
